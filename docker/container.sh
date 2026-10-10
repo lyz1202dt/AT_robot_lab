@@ -165,12 +165,29 @@ run_compose() {
     compose_cmd "${args[@]}" "$@"
 }
 
+can_build_with_bake_allow() {
+    docker compose build --help 2>/dev/null | grep -q -- '--print' \
+        && docker buildx bake --help 2>/dev/null | grep -q -- '--allow'
+}
+
+run_compose_bake_build() {
+    local service="$1"
+    local bake_file="${TMP_DIR}/docker-bake.json"
+
+    run_compose build --print "${service}" > "${bake_file}"
+    docker buildx bake --file "${bake_file}" --allow=network.host "${service}"
+}
+
 cmd_build() {
     require_docker
     setup_proxy_env
     echo "[INFO] Building ${SERVICE_NAME} image..."
     echo "[INFO] Build proxy: ${CLASH_PROXY_SCHEME_ARG}://${CLASH_PROXY_BUILD_HOST_ARG}:${CLASH_PROXY_PORT_ARG}"
-    run_compose build "${SERVICE_NAME}"
+    if can_build_with_bake_allow; then
+        run_compose_bake_build "${SERVICE_NAME}"
+    else
+        run_compose build "${SERVICE_NAME}"
+    fi
 }
 
 cmd_start() {
