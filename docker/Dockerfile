@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1.4
-
 ARG ISAACLAB_BASE_IMAGE_ARG
 ARG CLASH_PROXY_SCHEME_ARG=http
 ARG CLASH_PROXY_BUILD_HOST_ARG=127.0.0.1
@@ -47,7 +45,8 @@ RUN HTTP_PROXY=${CLASH_PROXY_BUILD_URL} \
     no_proxy=${CLASH_NO_PROXY_ARG} \
     bash -i -c "source ${HOME}/.bashrc && \
     export ISAACLAB_PATH=${ISAACLAB_PATH:-/workspace/isaaclab} && \
-    ${ISAACLAB_PATH}/isaaclab.sh --install"
+    ${ISAACLAB_PATH}/isaaclab.sh --install && \
+    ${ISAACLAB_PATH}/isaaclab.sh -p -m pip install --no-cache-dir flatdict"
 
 # Install the robot_lab extension into the same Python environment.
 RUN HTTP_PROXY=${CLASH_PROXY_BUILD_URL} \
@@ -59,8 +58,9 @@ RUN HTTP_PROXY=${CLASH_PROXY_BUILD_URL} \
     NO_PROXY=${CLASH_NO_PROXY_ARG} \
     no_proxy=${CLASH_NO_PROXY_ARG} \
     bash -i -c "source ${HOME}/.bashrc && \
+    export ISAACLAB_PATH=${ISAACLAB_PATH:-/workspace/isaaclab} && \
     cd ${DOCKER_ISAACLAB_EXTENSION_TEMPLATE_PATH}/source/robot_lab && \
-    pip install -e ."
+    ${ISAACLAB_PATH}/isaaclab.sh -p -m pip install -e ."
 
 # make working directory as the Isaac Lab directory
 # this is the default directory when the container is run
