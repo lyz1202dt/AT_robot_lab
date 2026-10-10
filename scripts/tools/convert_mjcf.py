@@ -33,8 +33,14 @@ optional arguments:
 """Launch Isaac Sim Simulator first."""
 
 import argparse
+import os
+import sys
 
 from isaaclab.app import AppLauncher
+
+# local imports
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../reinforcement_learning")))
+from rl_utils import enable_mjcf_importer
 
 # add argparse arguments
 parser = argparse.ArgumentParser(description="Utility to convert a MJCF into USD format.")
@@ -59,11 +65,11 @@ args_cli = parser.parse_args()
 # launch omniverse app
 app_launcher = AppLauncher(args_cli)
 simulation_app = app_launcher.app
+enable_mjcf_importer()
 
 """Rest everything follows."""
 
 import contextlib
-import os
 
 import carb
 import isaacsim.core.utils.stage as stage_utils

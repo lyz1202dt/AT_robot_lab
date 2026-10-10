@@ -20,7 +20,7 @@ from isaaclab.app import AppLauncher
 # local imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 import cli_args  # isort: skip
-from rl_utils import camera_follow
+from rl_utils import camera_follow, enable_mjcf_importer
 
 # add argparse arguments
 parser = argparse.ArgumentParser(description="Train an RL agent with RSL-RL.")
@@ -64,6 +64,7 @@ sys.argv = [sys.argv[0]] + hydra_args
 # launch omniverse app
 app_launcher = AppLauncher(args_cli)
 simulation_app = app_launcher.app
+enable_mjcf_importer()
 
 """Rest everything follows."""
 

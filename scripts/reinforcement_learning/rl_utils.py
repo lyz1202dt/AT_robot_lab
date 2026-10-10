@@ -4,6 +4,21 @@
 import torch
 
 
+def enable_mjcf_importer():
+    """Enable the Isaac Sim MJCF importer after SimulationApp has started."""
+    try:
+        from isaacsim.core.utils.extensions import enable_extension
+    except ImportError:
+        from omni.isaac.core.utils.extensions import enable_extension
+
+    enable_extension("isaacsim.asset.importer.mjcf")
+
+    # Give Kit one tick to register commands such as MJCFCreateImportConfig.
+    import omni.kit.app
+
+    omni.kit.app.get_app().update()
+
+
 def camera_follow(env):
     # Import Isaac Lab math utilities lazily so this helper can be imported
     # before SimulationApp is created without triggering Isaac Sim modules too early.

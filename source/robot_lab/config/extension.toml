@@ -20,6 +20,7 @@ keywords = ["extension", "robot_lab", "isaaclab"]
 "isaaclab_mimic" = {}
 "isaaclab_rl" = {}
 "isaaclab_tasks" = {}
+"isaacsim.asset.importer.mjcf" = {}
 # NOTE: Add additional dependencies here
 
 [[python.module]]

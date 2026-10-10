@@ -14,11 +14,8 @@ from robot_lab.assets import ISAACLAB_ASSETS_DATA_DIR
 ##
 
 CSDOG1_CFG = ArticulationCfg(
-    spawn=sim_utils.MjcfFileCfg(
-        fix_base=False,
-        self_collision=False,
-        import_sites=True,
-        asset_path=f"{ISAACLAB_ASSETS_DATA_DIR}/Robots/csdog1/mjcf/csdog1.xml",
+    spawn=sim_utils.UsdFileCfg(
+        usd_path=f"{ISAACLAB_ASSETS_DATA_DIR}/Robots/csdog1/usd/csdog1.usd",
         activate_contact_sensors=True,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             disable_gravity=False,

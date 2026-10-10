@@ -13,6 +13,7 @@ from isaaclab.app import AppLauncher
 
 # local imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+from rl_utils import enable_mjcf_importer
 
 # add argparse arguments
 parser = argparse.ArgumentParser(description="Train an RL agent with CusRL.")
@@ -51,6 +52,7 @@ if os.environ.get("LOCAL_RANK") is not None:
 # launch omniverse app
 app_launcher = AppLauncher(args_cli)
 simulation_app = app_launcher.app
+enable_mjcf_importer()
 
 """Rest everything follows."""
 
