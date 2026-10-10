@@ -37,3 +37,7 @@ _build
 
 # LSP
 pyrightconfig.json
+
+
+# Model
+source/robot_lab/data/Robots
