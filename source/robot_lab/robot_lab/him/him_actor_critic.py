@@ -30,7 +30,8 @@ class HIMActorCritic(nn.Module):
         estimator_num_prototypes: int = 32,
         estimator_temperature: float = 3.0,
         estimator_vel_slice: tuple[int, int] | None = None,
-        estimator_target_slice: tuple[int, int] | None = None,
+        estimator_target_slice: tuple[int, ...] | list[int] | None = None,
+        actor_current_frame: str = "first",
         **_: object,
     ):
         super().__init__()
@@ -44,6 +45,9 @@ class HIMActorCritic(nn.Module):
         self.num_actor_obs = num_actor_obs
         self.num_actions = num_actions
         self.num_one_step_obs = num_one_step_obs
+        if actor_current_frame not in {"first", "last"}:
+            raise ValueError(f"Unsupported actor_current_frame={actor_current_frame!r}; expected 'first' or 'last'.")
+        self.actor_current_frame = actor_current_frame
         if estimator_vel_slice is None or estimator_target_slice is None:
             raise ValueError(
                 "HIMActorCritic requires runner-injected estimator_vel_slice and "
@@ -53,10 +57,11 @@ class HIMActorCritic(nn.Module):
         self.target_slice = tuple(estimator_target_slice)
         for name, obs_slice, upper in (
             ("estimator_vel_slice", self.vel_slice, num_critic_obs),
-            ("estimator_target_slice", self.target_slice, num_critic_obs),
         ):
             if len(obs_slice) != 2 or not (0 <= obs_slice[0] < obs_slice[1] <= upper):
                 raise ValueError(f"Invalid {name}={obs_slice} for critic observation dim {upper}.")
+        if not self._is_valid_target_spec(self.target_slice, num_critic_obs):
+            raise ValueError(f"Invalid estimator_target_slice={self.target_slice} for critic observation dim {num_critic_obs}.")
         self.num_velocity_features = self.vel_slice[1] - self.vel_slice[0]
         self.num_latent = int(estimator_encoder_hidden_dims[-1])
 
@@ -99,6 +104,17 @@ class HIMActorCritic(nn.Module):
         self.distribution: Normal | None = None
         Normal.set_default_validate_args = False
 
+    @staticmethod
+    def _is_valid_target_spec(target_spec: tuple[int, ...], upper: int) -> bool:
+        if len(target_spec) == 2 and 0 <= target_spec[0] < target_spec[1] <= upper:
+            return True
+        return bool(target_spec) and all(0 <= index < upper for index in target_spec)
+
+    def _current_frame(self, obs_history: torch.Tensor) -> torch.Tensor:
+        if self.actor_current_frame == "last":
+            return obs_history[:, -self.num_one_step_obs :]
+        return obs_history[:, : self.num_one_step_obs]
+
     @property
     def action_mean(self) -> torch.Tensor:
         if self.distribution is None:
@@ -123,7 +139,7 @@ class HIMActorCritic(nn.Module):
     def update_distribution(self, obs_history: torch.Tensor):
         with torch.no_grad():
             pred_vel, latent = self.estimator(obs_history)
-        actor_input = torch.cat((obs_history[:, : self.num_one_step_obs], pred_vel, latent), dim=-1)
+        actor_input = torch.cat((self._current_frame(obs_history), pred_vel, latent), dim=-1)
         mean = self.actor(actor_input)
         self.distribution = Normal(mean, mean * 0.0 + self.std)
 
@@ -136,7 +152,7 @@ class HIMActorCritic(nn.Module):
     def act_inference(self, obs_history: torch.Tensor, observations: torch.Tensor | None = None) -> torch.Tensor:
         del observations
         pred_vel, latent = self.estimator(obs_history)
-        return self.actor(torch.cat((obs_history[:, : self.num_one_step_obs], pred_vel, latent), dim=-1))
+        return self.actor(torch.cat((self._current_frame(obs_history), pred_vel, latent), dim=-1))
 
     def get_actions_log_prob(self, actions: torch.Tensor) -> torch.Tensor:
         if self.distribution is None:
@@ -145,3 +161,9 @@ class HIMActorCritic(nn.Module):
 
     def evaluate(self, critic_observations: torch.Tensor, **_: object) -> torch.Tensor:
         return self.critic(critic_observations)
+
+    def policy_parameters(self):
+        return list(self.actor.parameters()) + list(self.critic.parameters()) + [self.std]
+
+    def estimator_parameters(self):
+        return self.estimator.parameters()

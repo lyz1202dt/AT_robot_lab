@@ -27,6 +27,7 @@ class _HIMPolicyExporter(torch.nn.Module):
         self.estimator = copy.deepcopy(actor_critic.estimator.encoder)
         self.num_one_step_obs = int(actor_critic.num_one_step_obs)
         self.num_velocity_features = int(actor_critic.num_velocity_features)
+        self.actor_current_frame = getattr(actor_critic, "actor_current_frame", "first")
         self.normalizer = copy.deepcopy(normalizer) if normalizer is not None else None
 
     def forward(self, obs_history: torch.Tensor):
@@ -35,7 +36,11 @@ class _HIMPolicyExporter(torch.nn.Module):
         parts = self.estimator(obs_history)
         pred_vel = parts[..., : self.num_velocity_features]
         latent = F.normalize(parts[..., self.num_velocity_features :], dim=-1, p=2.0)
-        actor_input = torch.cat((obs_history[:, : self.num_one_step_obs], pred_vel, latent), dim=-1)
+        if self.actor_current_frame == "last":
+            current_frame = obs_history[:, -self.num_one_step_obs :]
+        else:
+            current_frame = obs_history[:, : self.num_one_step_obs]
+        actor_input = torch.cat((current_frame, pred_vel, latent), dim=-1)
         return self.actor(actor_input)
 
 
@@ -69,6 +74,7 @@ def _build_him_deployment_metadata(actor_critic, env) -> dict[str, object]:
         "num_actions": int(actor_critic.num_actions),
         "estimator_vel_slice": list(actor_critic.vel_slice),
         "estimator_target_slice": list(actor_critic.target_slice),
+        "actor_current_frame": getattr(actor_critic, "actor_current_frame", "first"),
         "history_layout": "time_major_current_to_oldest",
     }
     if env is None or not hasattr(env, "get_him_deployment_metadata"):

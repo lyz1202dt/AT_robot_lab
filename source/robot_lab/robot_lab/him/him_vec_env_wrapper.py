@@ -16,6 +16,9 @@ class HIMVecEnvWrapper:
         clip_actions: float,
         num_one_step_obs: int | None = None,
         reorder_history: bool = True,
+        history_order: str = "latest_to_oldest",
+        policy_frame_term_order: list[str] | tuple[str, ...] | None = None,
+        estimator_target_term_names: list[str] | tuple[str, ...] | None = None,
     ):
         self._raw_env = env
         self._wrapped_env = RslRlVecEnvWrapper(env, clip_actions=clip_actions)
@@ -25,8 +28,16 @@ class HIMVecEnvWrapper:
         self.device = self._wrapped_env.device
         self.max_episode_length = self._wrapped_env.max_episode_length
         # Isaac Lab flattens each term's history independently; HIM expects full
-        # observation frames concatenated from newest to oldest.
+        # observation frames with a task-specific time and term order.
         self.reorder_history = bool(reorder_history)
+        if history_order not in {"latest_to_oldest", "oldest_to_latest"}:
+            raise ValueError(
+                f"Unsupported HIM history_order={history_order!r}; "
+                "expected 'latest_to_oldest' or 'oldest_to_latest'."
+            )
+        self.history_order = history_order
+        self.policy_frame_term_order = tuple(policy_frame_term_order or ())
+        self.estimator_target_term_names = tuple(estimator_target_term_names or ())
 
         self.policy_term_slices, self.policy_one_step_term_slices = self._build_group_layout("policy")
         self.critic_term_slices, _ = self._build_group_layout("critic")
@@ -69,21 +80,13 @@ class HIMVecEnvWrapper:
             f"policy_one_step={self.num_one_step_obs}"
         )
 
-        # HIMLocomotion's Dog2 contract: no heading in velocity_commands,
-        # 45-dimensional actor one-step input and 48-dimensional critic input.
+        # HIM deployment contract: no heading in velocity_commands and action
+        # history must be visible to the estimator/policy input.
         command_slice = self.policy_one_step_term_slices.get("velocity_commands")
         if command_slice is None or command_slice.stop - command_slice.start != 3:
             raise ValueError(
-                "HIM Dog2 requires velocity_commands to be exactly 3-D (vx, vy, yaw), "
+                "HIM requires velocity_commands to be exactly 3-D (vx, vy, yaw), "
                 "without heading."
-            )
-        if self.num_one_step_obs != 45:
-            raise ValueError(
-                f"HIM Dog2 actor one-step observation must be 45-D, got {self.num_one_step_obs}."
-            )
-        if self.num_privileged_obs != 48:
-            raise ValueError(
-                f"HIM Dog2 critic observation must be 48-D, got {self.num_privileged_obs}."
             )
         if "actions" not in self.policy_one_step_term_slices:
             raise ValueError("HIM policy observation history must include the actions term.")
@@ -154,7 +157,13 @@ class HIMVecEnvWrapper:
             "one_step_obs_dim": one_step_obs_dim,
             "history_length": history_length,
             "history_indices_latest_to_oldest": list(range(history_length)),
-            "history_layout": "time_major_current_to_oldest",
+            "history_order": self.history_order,
+            "history_layout": (
+                "time_major_current_to_oldest"
+                if self.history_order == "latest_to_oldest"
+                else "time_major_oldest_to_current"
+            ),
+            "policy_frame_term_order": list(self._ordered_policy_term_names()),
             "policy_term_names": list(self.policy_term_names),
             "policy_terms": [
                 {
@@ -195,7 +204,8 @@ class HIMVecEnvWrapper:
 
         term_histories = []
         history_lengths = set()
-        for term_name, term_slice in self.policy_term_slices.items():
+        for term_name in self._ordered_policy_term_names():
+            term_slice = self.policy_term_slices[term_name]
             one_step_slice = self.policy_one_step_term_slices[term_name]
             base_dim = one_step_slice.stop - one_step_slice.start
             total_dim = term_slice.stop - term_slice.start
@@ -215,9 +225,26 @@ class HIMVecEnvWrapper:
             return actor_obs
 
         frames = []
-        for history_index in range(history_length - 1, -1, -1):
+        if self.history_order == "latest_to_oldest":
+            history_indices = range(history_length - 1, -1, -1)
+        else:
+            history_indices = range(history_length)
+        for history_index in history_indices:
             frames.append(torch.cat([term_history[:, history_index] for term_history in term_histories], dim=-1))
         return torch.cat(frames, dim=-1)
+
+    def _ordered_policy_term_names(self) -> tuple[str, ...]:
+        available = tuple(self.policy_term_slices.keys())
+        if not self.policy_frame_term_order:
+            return available
+
+        missing = [term_name for term_name in self.policy_frame_term_order if term_name not in self.policy_term_slices]
+        if missing:
+            raise ValueError(f"HIM policy_frame_term_order references missing policy terms: {missing}.")
+        extra = [term_name for term_name in available if term_name not in self.policy_frame_term_order]
+        if extra:
+            raise ValueError(f"HIM policy_frame_term_order omits active policy terms: {extra}.")
+        return self.policy_frame_term_order
 
     def _extract_group_observations(self, observations, group_name: str) -> torch.Tensor | None:
         if observations is None:
@@ -298,8 +325,20 @@ class HIMVecEnvWrapper:
 
     def _infer_estimator_slices(self) -> tuple[tuple[int, int] | None, tuple[int, int] | None]:
         vel_slice = self._term_slice(self.critic_term_slices, "base_lin_vel")
-        target_slice = self._shared_policy_target_slice()
+        if self.estimator_target_term_names:
+            target_slice = self._target_indices_from_terms(self.estimator_target_term_names)
+        else:
+            target_slice = self._shared_policy_target_slice()
         return vel_slice, target_slice
+
+    def _target_indices_from_terms(self, term_names: tuple[str, ...]) -> tuple[int, ...] | None:
+        indices: list[int] = []
+        for term_name in term_names:
+            term_slice = self.critic_term_slices.get(term_name)
+            if term_slice is None:
+                return None
+            indices.extend(range(term_slice.start, term_slice.stop))
+        return tuple(indices)
 
     @staticmethod
     def _term_slice(layout: dict[str, slice], term_name: str) -> tuple[int, int] | None:

@@ -16,7 +16,7 @@ export socket_proxy=192.168.2.180:7890
 
 1. ssh -p 3022  sw@shenweitechnology.com
 2. cd /home/sw/code/AT_rl_sar
-3. 
+3.
 
 export http_proxy=192.168.2.180:7890
 export https_proxy=192.168.2.180:7890
@@ -222,3 +222,14 @@ docker cp ~/桌面/2026-06-12_13-55-44 robot-lab:/workspace/isaaclab_extension_t
 cp atdog_dog2_arm_rough/2026-06-10_11-04-22  atdog_dog3_arm_rough/
 ```
 
+
+
+
+```
+如果训练仿真跑到CPU上，容器内执行：
+
+ln -s /usr/lib/x86_64-linux-gnu/libcuda.so.1 \
+      /usr/lib/x86_64-linux-gnu/libcuda.so
+
+ldconfig
+```

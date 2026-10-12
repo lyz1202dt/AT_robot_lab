@@ -206,7 +206,14 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
     # wrap around environment for rsl-rl
     if agent_cfg.class_name == "HIMOnPolicyRunner":
-        env = HIMVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions, num_one_step_obs=agent_cfg.policy.num_one_step_obs)
+        env = HIMVecEnvWrapper(
+            env,
+            clip_actions=agent_cfg.clip_actions,
+            num_one_step_obs=agent_cfg.policy.num_one_step_obs,
+            history_order=getattr(agent_cfg.policy, "history_order", "latest_to_oldest"),
+            policy_frame_term_order=getattr(agent_cfg.policy, "policy_frame_term_order", None),
+            estimator_target_term_names=getattr(agent_cfg.policy, "estimator_target_term_names", None),
+        )
     else:
         env = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
 

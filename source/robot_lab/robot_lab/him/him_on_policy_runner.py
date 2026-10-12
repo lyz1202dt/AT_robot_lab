@@ -76,7 +76,7 @@ class HIMOnPolicyRunner:
             num_critic_obs,
             "estimator_vel_slice",
         )
-        target_slice = self._select_slice(
+        target_slice = self._select_target_spec(
             self.policy_cfg.get("estimator_target_slice"),
             getattr(self.env, "default_estimator_target_slice", None),
             num_critic_obs,
@@ -121,6 +121,39 @@ class HIMOnPolicyRunner:
             return (int(configured_slice[0]), int(configured_slice[1]))
         if configured_slice is not None:
             raise ValueError(f"Invalid HIM {slice_name}={tuple(configured_slice)} for critic dim {upper_bound}.")
+        return None
+
+    @staticmethod
+    def _is_valid_target_spec(target_spec: tuple[int, ...] | list[int] | None, upper_bound: int) -> bool:
+        if target_spec is None:
+            return False
+        if len(target_spec) == 2 and 0 <= int(target_spec[0]) < int(target_spec[1]) <= upper_bound:
+            return True
+        return bool(target_spec) and all(0 <= int(index) < upper_bound for index in target_spec)
+
+    def _select_target_spec(
+        self,
+        configured_spec: tuple[int, ...] | list[int] | None,
+        inferred_spec: tuple[int, ...] | list[int] | None,
+        upper_bound: int,
+        slice_name: str,
+    ) -> tuple[int, ...] | None:
+        if self._is_valid_target_spec(inferred_spec, upper_bound):
+            resolved_spec = tuple(int(index) for index in inferred_spec)
+            configured_valid = self._is_valid_target_spec(configured_spec, upper_bound)
+            configured_value = None
+            if configured_valid:
+                configured_value = tuple(int(index) for index in configured_spec)
+            if configured_spec is not None and configured_value != resolved_spec:
+                print(
+                    f"[WARN] HIM {slice_name}={tuple(configured_spec)} does not match the environment layout. "
+                    f"Using inferred target spec with {len(resolved_spec)} entries."
+                )
+            return resolved_spec
+        if self._is_valid_target_spec(configured_spec, upper_bound):
+            return tuple(int(index) for index in configured_spec)
+        if configured_spec is not None:
+            raise ValueError(f"Invalid HIM {slice_name}={tuple(configured_spec)} for critic dim {upper_bound}.")
         return None
 
     def add_git_repo_to_log(self, source_file: str):

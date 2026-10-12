@@ -47,7 +47,7 @@ class HIMEstimator(nn.Module):
         temporal_steps: int,
         num_one_step_obs: int,
         vel_slice: tuple[int, int],
-        target_slice: tuple[int, int],
+        target_slice: tuple[int, int] | list[int] | tuple[int, ...],
         enc_hidden_dims: list[int] | tuple[int, ...] = (128, 64, 16),
         tar_hidden_dims: list[int] | tuple[int, ...] = (128, 64),
         activation: str = "elu",
@@ -64,7 +64,15 @@ class HIMEstimator(nn.Module):
         self.max_grad_norm = max_grad_norm
         self.temperature = temperature
         self.vel_slice = tuple(vel_slice)
-        self.target_slice = tuple(target_slice)
+        target_spec = tuple(int(index) for index in target_slice)
+        if len(target_spec) == 2 and target_spec[0] < target_spec[1]:
+            self.target_slice = target_spec
+            self.target_indices = None
+            target_input_dim = self.target_slice[1] - self.target_slice[0]
+        else:
+            self.target_slice = target_spec
+            self.target_indices = torch.tensor(target_spec, dtype=torch.long)
+            target_input_dim = len(target_spec)
 
         activation_layer = get_activation(activation)
 
@@ -76,7 +84,6 @@ class HIMEstimator(nn.Module):
         enc_layers.append(nn.Linear(enc_input_dim, self.num_latent + (self.vel_slice[1] - self.vel_slice[0])))
         self.encoder = nn.Sequential(*enc_layers)
 
-        target_input_dim = self.target_slice[1] - self.target_slice[0]
         target_layers: list[nn.Module] = []
         for hidden_dim in tar_hidden_dims:
             target_layers.extend([nn.Linear(target_input_dim, hidden_dim), activation_layer])
@@ -87,6 +94,11 @@ class HIMEstimator(nn.Module):
         self.proto = nn.Embedding(num_prototypes, self.num_latent)
         self.learning_rate = learning_rate
         self.optimizer = optim.Adam(self.parameters(), lr=self.learning_rate)
+
+    def _target_observations(self, critic_obs: torch.Tensor) -> torch.Tensor:
+        if self.target_indices is not None:
+            return critic_obs.index_select(-1, self.target_indices.to(device=critic_obs.device))
+        return critic_obs[:, self.target_slice[0] : self.target_slice[1]]
 
     def forward(self, obs_history: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         parts = self.encoder(obs_history.detach())
@@ -100,6 +112,8 @@ class HIMEstimator(nn.Module):
         next_critic_obs: torch.Tensor,
         dones: torch.Tensor | None = None,
         lr: float | None = None,
+        velocity_loss_coef: float = 1.0,
+        swap_loss_coef: float = 1.0,
     ) -> tuple[float, float]:
         if lr is not None and lr != self.learning_rate:
             self.learning_rate = lr
@@ -116,7 +130,7 @@ class HIMEstimator(nn.Module):
         next_critic_obs = next_critic_obs[valid_mask]
 
         target_vel = next_critic_obs[:, self.vel_slice[0] : self.vel_slice[1]].detach()
-        target_obs = next_critic_obs[:, self.target_slice[0] : self.target_slice[1]].detach()
+        target_obs = self._target_observations(next_critic_obs).detach()
 
         parts = self.encoder(obs_history)
         pred_vel = parts[..., : self.vel_slice[1] - self.vel_slice[0]]
@@ -137,9 +151,12 @@ class HIMEstimator(nn.Module):
         log_prob_student = F.log_softmax(score_student / self.temperature, dim=-1)
         log_prob_target = F.log_softmax(score_target / self.temperature, dim=-1)
 
-        swap_loss = -0.5 * (assign_student * log_prob_target + assign_target * log_prob_student).mean()
+        swap_loss = -0.5 * (
+            torch.sum(assign_target * log_prob_student, dim=-1).mean()
+            + torch.sum(assign_student * log_prob_target, dim=-1).mean()
+        )
         estimation_loss = F.mse_loss(pred_vel, target_vel)
-        total_loss = estimation_loss + swap_loss
+        total_loss = velocity_loss_coef * estimation_loss + swap_loss_coef * swap_loss
 
         self.optimizer.zero_grad()
         total_loss.backward()

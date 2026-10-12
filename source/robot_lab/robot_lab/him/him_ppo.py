@@ -25,6 +25,9 @@ class HIMPPO:
         value_loss_coef: float = 1.0,
         entropy_coef: float = 0.0,
         learning_rate: float = 1e-3,
+        estimator_learning_rate: float | None = None,
+        estimator_velocity_loss_coef: float = 1.0,
+        estimator_swap_loss_coef: float = 1.0,
         max_grad_norm: float = 1.0,
         use_clipped_value_loss: bool = True,
         schedule: str = "fixed",
@@ -36,10 +39,13 @@ class HIMPPO:
         self.desired_kl = desired_kl
         self.schedule = schedule
         self.learning_rate = learning_rate
+        self.estimator_learning_rate = estimator_learning_rate
+        self.estimator_velocity_loss_coef = estimator_velocity_loss_coef
+        self.estimator_swap_loss_coef = estimator_swap_loss_coef
         self.actor_critic = actor_critic.to(self.device)
         self.policy = self.actor_critic
         self.storage = None
-        self.optimizer = optim.Adam(self.actor_critic.parameters(), lr=learning_rate)
+        self.optimizer = optim.Adam(self.actor_critic.policy_parameters(), lr=learning_rate)
         self.transition = HIMRolloutStorage.Transition()
 
         self.clip_param = clip_param
@@ -144,6 +150,9 @@ class HIMPPO:
                 obs_batch,
                 next_critic_obs_batch,
                 dones=dones_batch,
+                lr=self.estimator_learning_rate,
+                velocity_loss_coef=self.estimator_velocity_loss_coef,
+                swap_loss_coef=self.estimator_swap_loss_coef,
             )
 
             ratio = torch.exp(actions_log_prob_batch - torch.squeeze(old_actions_log_prob_batch))
@@ -166,7 +175,7 @@ class HIMPPO:
             loss = surrogate_loss + self.value_loss_coef * value_loss - self.entropy_coef * entropy_batch.mean()
             self.optimizer.zero_grad()
             loss.backward()
-            nn.utils.clip_grad_norm_(self.actor_critic.parameters(), self.max_grad_norm)
+            nn.utils.clip_grad_norm_(self.actor_critic.policy_parameters(), self.max_grad_norm)
             self.optimizer.step()
 
             mean_value_loss += float(value_loss.item())
