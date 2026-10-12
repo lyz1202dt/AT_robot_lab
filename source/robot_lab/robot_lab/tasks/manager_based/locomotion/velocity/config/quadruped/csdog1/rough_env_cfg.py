@@ -98,8 +98,8 @@ class CSDog1RoughEnvCfg(LocomotionVelocityRoughEnvCfg):
                 "x": (-0.5, 0.5),
                 "y": (-0.5, 0.5),
                 "z": (0.0, 0.2),
-                "roll": (-3.14, 3.14),
-                "pitch": (-3.14, 3.14),
+                "roll": (-1.0, 1.0),
+                "pitch": (-1.0, 1.0),
                 "yaw": (-3.14, 3.14),
             },
             "velocity_range": {
@@ -107,7 +107,7 @@ class CSDog1RoughEnvCfg(LocomotionVelocityRoughEnvCfg):
                 "y": (-0.5, 0.5),
                 "z": (-0.5, 0.5),
                 "roll": (-0.5, 0.5),
-                "pitch": (-0.5, 0.5),
+                "pitch": (-0.3, 0.3),
                 "yaw": (-0.5, 0.5),
             },
         }
