@@ -89,9 +89,9 @@ class CSDog1Flat282DomainRandHIMRunnerCfg(CSDog1Flat282HIMRunnerCfg):
         self.max_iterations = 1000
         self.save_interval = 50
         self.experiment_name = "csdog1_flat_282_domain_rand"
-        self.algorithm.learning_rate = 5.0e-5
-        self.algorithm.entropy_coef = 0.003
-        self.algorithm.schedule = "fixed"
+        self.algorithm.learning_rate = 1.0e-4
+        self.algorithm.entropy_coef = 0.0015
+        self.algorithm.schedule = "adaptive"
 
 
 @configclass
