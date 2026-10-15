@@ -165,8 +165,8 @@ class CSDog1RoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         # ------------------------------Rewards------------------------------
         self.rewards.is_terminated.weight = -2.0
 
-        self.rewards.lin_vel_z_l2.weight = -2.0
-        self.rewards.ang_vel_xy_l2.weight = -0.05
+        self.rewards.lin_vel_z_l2.weight = -5.0
+        self.rewards.ang_vel_xy_l2.weight = -1.0
         self.rewards.flat_orientation_l2.weight = -1.0
         self.rewards.base_height_l2.weight = 0.0
         self.rewards.base_height_l2.params["target_height"] = 0.275
@@ -192,8 +192,8 @@ class CSDog1RoughEnvCfg(LocomotionVelocityRoughEnvCfg):
             ["FR_(hip|thigh|calf).*", "RL_(hip|thigh|calf).*"],
         ]
 
-        self.rewards.action_rate_l2.weight = -0.03
-        self.rewards.action_smoothness_2_l2.weight = -0.01
+        self.rewards.action_rate_l2.weight = -0.2
+        self.rewards.action_smoothness_2_l2.weight = -0.05
 
         self.rewards.undesired_contacts.weight = -1.0
         self.rewards.undesired_contacts.params["sensor_cfg"].body_names = [f"^(?!.*{self.foot_link_name}).*"]
