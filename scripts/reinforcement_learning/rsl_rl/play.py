@@ -102,6 +102,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
 def apply_him_observation_history(env_cfg, agent_cfg):
+    if hasattr(env_cfg, "cyberstar_config"):
+        return
     if agent_cfg.class_name != "HIMOnPolicyRunner":
         return
     policy_obs_cfg = getattr(getattr(env_cfg, "observations", None), "policy", None)
@@ -139,6 +141,10 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         env_cfg.scene.terrain.terrain_generator.curriculum = False
 
     # disable randomization for play
+    if hasattr(env_cfg, "cyberstar_config"):
+        env_cfg.cyberstar_play = True
+        env_cfg.cyberstar_config["noise"]["add_noise"] = False
+        env_cfg.cyberstar_config["domain_rand"]["push_robots"] = False
     env_cfg.observations.policy.enable_corruption = False
     # remove random pushing
     env_cfg.events.randomize_apply_external_force_torque = None
@@ -155,9 +161,10 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             omega_z_sensitivity=env_cfg.commands.base_velocity.ranges.ang_vel_z[1],
         )
         controller = Se2Keyboard(config)
-        env_cfg.observations.policy.velocity_commands = ObsTerm(
-            func=lambda env: torch.tensor(controller.advance(), dtype=torch.float32).unsqueeze(0).to(env.device),
-        )
+        if not hasattr(env_cfg, "cyberstar_config"):
+            env_cfg.observations.policy.velocity_commands = ObsTerm(
+                func=lambda env: torch.tensor(controller.advance(), dtype=torch.float32).unsqueeze(0).to(env.device),
+            )
 
     # specify directory for logging experiments
     log_root_path = PROJECT_ROOT / "logs" / "rsl_rl" / agent_cfg.experiment_name
@@ -187,6 +194,9 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
     # create isaac environment
     env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
+
+    if args_cli.keyboard and hasattr(env.unwrapped, "cyberstar"):
+        env.unwrapped.cyberstar_keyboard = controller.advance
 
     # convert to single-agent instance if required by the RL algorithm
     if isinstance(env.unwrapped, DirectMARLEnv):

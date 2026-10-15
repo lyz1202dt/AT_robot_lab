@@ -151,7 +151,7 @@ class HIMVecEnvWrapper:
     def get_him_deployment_metadata(self) -> dict[str, object]:
         one_step_obs_dim = self.num_one_step_obs
         history_length = self.history_length
-        return {
+        metadata = {
             "actor_obs_dim": int(self.num_obs),
             "critic_obs_dim": None if self.num_privileged_obs is None else int(self.num_privileged_obs),
             "one_step_obs_dim": one_step_obs_dim,
@@ -179,6 +179,24 @@ class HIMVecEnvWrapper:
             "default_estimator_vel_slice": self.default_estimator_vel_slice,
             "default_estimator_target_slice": self.default_estimator_target_slice,
         }
+        runtime = getattr(self.unwrapped, "cyberstar", None)
+        if runtime is not None:
+            metadata["cyberstar_contract"] = {
+                "default_joint_positions": runtime.default_dof_pos[0].tolist(),
+                "joint_names": runtime.dof_names,
+                "command_scale": runtime.commands_scale.tolist(),
+                "angular_velocity_scale": runtime.obs_scales.ang_vel,
+                "joint_velocity_scale": runtime.obs_scales.dof_vel,
+                "action_scale": runtime.cfg.control.action_scale,
+                "action_clip": runtime.cfg.normalization.clip_actions,
+                "cycle_time": runtime.cfg.control.gait_cycle_s,
+                "stop_phase": "contact_and_state_dependent_adjustment",
+                "reset_history": "repeat_first_valid_frame",
+                "policy_dt": runtime.dt,
+                "nominal_kp": 30.0,
+                "nominal_kd": 1.0,
+            }
+        return metadata
 
     def _cache_observations(self, actor_obs: torch.Tensor, critic_obs: torch.Tensor | None):
         self._latest_actor_obs = actor_obs
@@ -199,6 +217,9 @@ class HIMVecEnvWrapper:
         return actor_obs, critic_obs
 
     def _reorder_policy_history(self, actor_obs: torch.Tensor) -> torch.Tensor:
+        if hasattr(self.unwrapped, "cyberstar"):
+            # This task already emits time-major source history, including reset fill.
+            return actor_obs
         if not self.policy_term_slices or not self.policy_one_step_term_slices:
             return actor_obs
 
@@ -287,6 +308,20 @@ class HIMVecEnvWrapper:
         return max(term_slice.stop for term_slice in self.policy_one_step_term_slices.values())
 
     def _build_group_layout(self, group_name: str) -> tuple[dict[str, slice], dict[str, slice]]:
+        if hasattr(self.unwrapped, "cyberstar"):
+            frame = {}
+            cursor = 0
+            for name, dim in (("phase", 2), ("base_ang_vel", 3), ("projected_gravity", 3),
+                              ("velocity_commands", 3), ("joint_pos", 12), ("joint_vel", 12), ("actions", 12)):
+                frame[name] = slice(cursor, cursor + dim)
+                cursor += dim
+            if group_name == "policy":
+                return {name: slice(sl.start * 6, sl.stop * 6) for name, sl in frame.items()}, frame
+            layout = {name: slice(235 + sl.start, 235 + sl.stop) for name, sl in frame.items()}
+            layout["clean_history_prefix"] = slice(0, 235)
+            layout["base_lin_vel"] = slice(282, 285)
+            layout["privileges"] = slice(285, 491)
+            return layout, layout
         observation_manager = getattr(self.unwrapped, "observation_manager", None)
         if observation_manager is None:
             return {}, {}

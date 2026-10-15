@@ -1,7 +1,12 @@
 # CSDog1 deployment observation contract
 
 The training defaults follow `Cyberstar_rl_deploy/src/cyber1_edu_sdk/config/mnn_model_policy_stairs.yaml`
-and `src/cyber1_edu_sdk/src/mnn_model.cpp`. All CSDog1 tasks inherit these defaults.
+and `src/cyber1_edu_sdk/src/mnn_model.cpp`.
+
+**Exception:** `RobotLab-Isaac-Velocity-Flat-CSDog1-282-DomainRand-v0` now uses the full
+Cyberstar training contract: calf=-0.823, command scale=[2,2,0.25], 491-D critic and
+contact-dependent stopping. See [migration guide](../../../../../../../../../../docs/CSDOG1_MIGRATION.md).
+The defaults below describe the other existing CSDog1 tasks.
 
 | Frame indices | Quantity | Scale |
 | --- | --- | --- |

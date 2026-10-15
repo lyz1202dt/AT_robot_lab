@@ -83,22 +83,39 @@ class CSDog1Flat282HIMRunnerCfg(RslRlOnPolicyRunnerCfg):
 
 @configclass
 class CSDog1Flat282DomainRandHIMRunnerCfg(CSDog1Flat282HIMRunnerCfg):
+    # Explicit source checkpoint starts the robustness curriculum at iteration 1000.
+    # A portable path is resolved by train.py; override with --checkpoint for another source.
+    resume = True
+    load_optimizer: bool = False
+    source_checkpoint: str = "logs/rsl_rl/csdog1_flat_282/flat_282/model_1000.pt"
+    seed = 1
+
     def __post_init__(self):
         super().__post_init__()
 
         self.max_iterations = 1000
         self.save_interval = 50
         self.experiment_name = "csdog1_flat_282_domain_rand"
-        self.algorithm.learning_rate = 1.0e-4
-        self.algorithm.entropy_coef = 0.0015
-        self.algorithm.schedule = "adaptive"
+        self.algorithm.learning_rate = 5.0e-5
+        self.algorithm.entropy_coef = 0.003
+        self.algorithm.schedule = "fixed"
+        self.clip_actions = 100.0
 
 
 @configclass
 class CSDog1Stairs282HIMRunnerCfg(CSDog1Flat282DomainRandHIMRunnerCfg):
+    seed = 42
+
     def __post_init__(self):
         super().__post_init__()
 
         self.max_iterations = 500
         self.save_interval = 50
         self.experiment_name = "csdog1_stairs_282"
+        self.resume = False
+        self.source_checkpoint = ""
+        self.load_optimizer = True
+        self.clip_actions = None
+        self.algorithm.learning_rate = 1.0e-4
+        self.algorithm.entropy_coef = 0.0015
+        self.algorithm.schedule = "adaptive"

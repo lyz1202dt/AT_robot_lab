@@ -35,10 +35,10 @@ gym.register(
 
 gym.register(
     id="RobotLab-Isaac-Velocity-Flat-CSDog1-282-DomainRand-v0",
-    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    entry_point=f"{__name__}.cyberstar.lab:CSDog1CyberstarEnv",
     disable_env_checker=True,
     kwargs={
-        "env_cfg_entry_point": f"{__name__}.flat_env_cfg:CSDog1Flat282DomainRandEnvCfg",
+        "env_cfg_entry_point": f"{__name__}.cyberstar.env_cfg:CSDog1CyberstarDomainRandEnvCfg",
         "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_him_cfg:CSDog1Flat282DomainRandHIMRunnerCfg",
         "rsl_rl_ppo_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:CSDog1Flat282DomainRandPPORunnerCfg",
         "rsl_rl_him_cfg_entry_point": f"{agents.__name__}.rsl_rl_him_cfg:CSDog1Flat282DomainRandHIMRunnerCfg",

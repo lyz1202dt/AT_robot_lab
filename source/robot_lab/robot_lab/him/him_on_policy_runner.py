@@ -174,27 +174,33 @@ class HIMOnPolicyRunner:
         }
         torch.save(payload, path)
 
-    def load(self, path: str):
+    def load(self, path: str, load_optimizer: bool | None = None):
         loaded_dict = torch.load(path, map_location=self.device)
         self._load_model_state(loaded_dict["model_state_dict"])
-        if "optimizer_state_dict" in loaded_dict:
+        if load_optimizer is None:
+            load_optimizer = self.cfg.get("load_optimizer", True)
+        if load_optimizer and "optimizer_state_dict" in loaded_dict:
             try:
                 self.alg.optimizer.load_state_dict(loaded_dict["optimizer_state_dict"])
             except (RuntimeError, ValueError):
                 print("[WARN] HIM optimizer state is incompatible with the current model. Skipping optimizer load.")
-        if "estimator_optimizer_state_dict" in loaded_dict:
+        if load_optimizer and "estimator_optimizer_state_dict" in loaded_dict:
             try:
                 self.alg.actor_critic.estimator.optimizer.load_state_dict(
                     loaded_dict["estimator_optimizer_state_dict"]
                 )
             except (RuntimeError, ValueError):
                 print("[WARN] HIM estimator optimizer state is incompatible. Skipping estimator optimizer load.")
-        else:
+        elif load_optimizer:
             print("[WARN] HIM checkpoint has no estimator optimizer state. Estimator optimizer starts fresh.")
         self.current_learning_iteration = int(loaded_dict.get("iter", 0))
 
     def _load_model_state(self, loaded_state: dict[str, torch.Tensor]):
         current_state = self.alg.actor_critic.state_dict()
+        if hasattr(self.env.unwrapped, "cyberstar"):
+            from .source_checkpoint import migrate_source_state
+
+            loaded_state = migrate_source_state(loaded_state, current_state)
         compatible_state = {}
         skipped = []
         for key, value in loaded_state.items():
@@ -254,6 +260,9 @@ class HIMOnPolicyRunner:
 
         tot_iter = self.current_learning_iteration + num_learning_iterations
         for iteration in range(self.current_learning_iteration, tot_iter):
+            task_runtime = getattr(self.env.unwrapped, "cyberstar", None)
+            if task_runtime is not None:
+                task_runtime.ppo_iteration = iteration
             start = time.time()
             episodes_completed = 0
             with torch.inference_mode():

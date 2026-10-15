@@ -108,6 +108,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
 def apply_him_observation_history(env_cfg, agent_cfg):
+    if hasattr(env_cfg, "cyberstar_config"):
+        return
     if agent_cfg.class_name != "HIMOnPolicyRunner":
         return
     policy_obs_cfg = getattr(getattr(env_cfg, "observations", None), "policy", None)
@@ -220,6 +222,21 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         log_dir += f"_{agent_cfg.run_name}"
     log_dir = os.path.join(log_root_path, log_dir)
 
+    # Resolve the checkpoint before allocating the simulation scene.
+    if agent_cfg.resume or agent_cfg.algorithm.class_name == "Distillation":
+        if getattr(agent_cfg, "source_checkpoint", None) and not args_cli.load_run:
+            resume_path = Path(args_cli.checkpoint or agent_cfg.source_checkpoint).expanduser()
+            if not resume_path.is_absolute():
+                resume_path = PROJECT_ROOT / resume_path
+            if not resume_path.is_file():
+                raise FileNotFoundError(
+                    f"CSDog1 robustness fine-tuning requires the source flat-282 checkpoint: {resume_path}. "
+                    "Pass --resume --checkpoint /path/to/model_1000.pt, or use agent.resume=false for a fresh run."
+                )
+            resume_path = str(resume_path)
+        else:
+            resume_path = get_checkpoint_path(log_root_path, agent_cfg.load_run, agent_cfg.load_checkpoint)
+
     # set the IO descriptors export flag if requested
     if isinstance(env_cfg, ManagerBasedRLEnvCfg):
         env_cfg.export_io_descriptors = args_cli.export_io_descriptors
@@ -237,10 +254,6 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # convert to single-agent instance if required by the RL algorithm
     if isinstance(env.unwrapped, DirectMARLEnv):
         env = multi_agent_to_single_agent(env)
-
-    # save resume path before creating a new log_dir
-    if agent_cfg.resume or agent_cfg.algorithm.class_name == "Distillation":
-        resume_path = get_checkpoint_path(log_root_path, agent_cfg.load_run, agent_cfg.load_checkpoint)
 
     # wrap for video recording
     if args_cli.video:
@@ -280,13 +293,15 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     runner.add_git_repo_to_log(__file__)
     # load the checkpoint
     if agent_cfg.resume or agent_cfg.algorithm.class_name == "Distillation":
-      print(f"[INFO]: Loading model checkpoint from: {resume_path}")
-      try:
-          runner.load(resume_path)
-      except RuntimeError as e:
-          print(f"[WARN] Strict checkpoint loading failed: {e}")
-          print("[INFO] Falling back to compatible checkpoint loading.")
-          load_compatible_checkpoint(runner, resume_path, load_optimizer=False)
+        print(f"[INFO]: Loading model checkpoint from: {resume_path}")
+        try:
+            runner.load(resume_path)
+        except RuntimeError as e:
+            if hasattr(env.unwrapped, "cyberstar"):
+                raise
+            print(f"[WARN] Strict checkpoint loading failed: {e}")
+            print("[INFO] Falling back to compatible checkpoint loading.")
+            load_compatible_checkpoint(runner, resume_path, load_optimizer=False)
 
     # dump the configuration into log-directory
     dump_yaml(os.path.join(log_dir, "params", "env.yaml"), env_cfg)
