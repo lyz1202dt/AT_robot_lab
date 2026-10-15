@@ -3,16 +3,55 @@
 
 import math
 
+from isaaclab.managers import ObservationGroupCfg as ObsGroup
 from isaaclab.managers import ObservationTermCfg as ObsTerm
 from isaaclab.utils import configclass
 
 import robot_lab.tasks.manager_based.locomotion.velocity.mdp as mdp
-from robot_lab.tasks.manager_based.locomotion.velocity.velocity_env_cfg import LocomotionVelocityRoughEnvCfg
+from robot_lab.tasks.manager_based.locomotion.velocity.velocity_env_cfg import (
+    LocomotionVelocityRoughEnvCfg,
+    ObservationsCfg,
+)
+
+from .observations import CSDog1JointPositionAction, CSDog1Phase, previous_action, velocity_commands
 
 ##
 # Pre-defined configs
 ##
 from robot_lab.assets.csdog1 import CSDOG1_CFG  # isort: skip
+
+
+def csdog1_phase_term():
+    return ObsTerm(
+        func=CSDog1Phase,
+        params={
+            "command_name": "base_velocity",
+            "cycle_time": 0.5,
+            "stop_cycle_time": 0.5,
+            "stop_duration": 0.5,
+            "translation_threshold": 0.05,
+            "yaw_threshold": 0.05,
+        },
+        clip=(-1.0, 1.0),
+        scale=1.0,
+    )
+
+
+@configclass
+class CSDog1PolicyCfg(ObsGroup):
+    """Deployment's 47-D frame, with phase first for every training backend."""
+
+    phase = csdog1_phase_term()
+    base_ang_vel = ObservationsCfg.PolicyCfg().base_ang_vel
+    projected_gravity = ObservationsCfg.PolicyCfg().projected_gravity
+    velocity_commands = ObservationsCfg.PolicyCfg().velocity_commands
+    joint_pos = ObservationsCfg.PolicyCfg().joint_pos
+    joint_vel = ObservationsCfg.PolicyCfg().joint_vel
+    actions = ObsTerm(func=previous_action, clip=(-100.0, 100.0), scale=1.0)
+
+    # Preserve sensor noise augmentation during training.
+    enable_corruption = True
+    concatenate_terms = True
 
 
 @configclass
@@ -40,38 +79,47 @@ class CSDog1RoughEnvCfg(LocomotionVelocityRoughEnvCfg):
 
         # ------------------------------Scene------------------------------
         self.scene.robot = CSDOG1_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+        # mnn_model_policy_stairs.yaml: observation and joint-target reference.
+        self.scene.robot.init_state.joint_pos = {
+            ".*_hip_joint": 0.0,
+            ".*_thigh_joint": 0.785,
+            ".*_calf_joint": -0.623,
+        }
+        for actuator in self.scene.robot.actuators.values():
+            actuator.stiffness = 30.0
+            actuator.damping = 1.0
         self.scene.height_scanner.prim_path = "{ENV_REGEX_NS}/Robot/base_link/base_link"
         self.scene.height_scanner_base.prim_path = "{ENV_REGEX_NS}/Robot/base_link/base_link"
         self.scene.contact_forces.prim_path = "{ENV_REGEX_NS}/Robot/base_link/.*"
 
         # ------------------------------Observations------------------------------
-        self.observations.policy.base_lin_vel.scale = 2.0
+        self.observations.policy = CSDog1PolicyCfg()
         self.observations.policy.base_ang_vel.scale = 0.25
         self.observations.policy.joint_pos.scale = 1.0
         self.observations.policy.joint_vel.scale = 0.05
-        self.observations.policy.base_lin_vel = None
-        self.observations.policy.height_scan = None
         self.observations.critic.height_scan = None
-        self.observations.policy.phase = ObsTerm(
-            func=mdp.phase,
-            params={"cycle_time": 0.5},
-            clip=(-1.0, 1.0),
-            scale=1.0,
-        )
-        self.observations.critic.phase = ObsTerm(
-            func=mdp.phase,
-            params={"cycle_time": 0.5},
-            clip=(-1.0, 1.0),
-            scale=1.0,
-        )
+        self.observations.policy.velocity_commands.scale = (1.0, 1.0, 0.25)
+        self.observations.critic.base_ang_vel.scale = 0.25
+        self.observations.critic.joint_vel.scale = 0.05
+        self.observations.critic.velocity_commands.scale = (1.0, 1.0, 0.25)
+        self.observations.critic.actions.func = previous_action
+        self.observations.critic.phase = csdog1_phase_term()
+        # Isaac Lab clips before scaling; deployment clips the scaled frame
+        # to +/-100. Convert the pre-scale limits to preserve that contract.
+        for group in (self.observations.policy, self.observations.critic):
+            group.base_ang_vel.clip = (-400.0, 400.0)
+            group.joint_vel.clip = (-2000.0, 2000.0)
+            group.velocity_commands.func = velocity_commands
+            group.velocity_commands.clip = None
         self.observations.policy.joint_pos.params["asset_cfg"].joint_names = self.joint_names
         self.observations.policy.joint_vel.params["asset_cfg"].joint_names = self.joint_names
         self.observations.critic.joint_pos.params["asset_cfg"].joint_names = self.joint_names
         self.observations.critic.joint_vel.params["asset_cfg"].joint_names = self.joint_names
 
         # ------------------------------Actions------------------------------
+        self.actions.joint_pos.class_type = CSDog1JointPositionAction
         self.actions.joint_pos.scale = {".*": 0.25}
-        self.actions.joint_pos.clip = {".*": (-100.0, 100.0)}
+        self.actions.joint_pos.clip = None
         self.actions.joint_pos.joint_names = self.joint_names
 
         # ------------------------------Events------------------------------
@@ -197,6 +245,9 @@ class CSDog1RoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         self.curriculum.command_levels = None
 
         # ------------------------------Commands------------------------------
+        # Preserve slow stair commands: the shared threshold generator would
+        # zero every translation command below 0.2 m/s before phase detection.
+        self.commands.base_velocity.class_type = mdp.UniformVelocityCommand
         self.commands.base_velocity.resampling_time_range = (5.0, 5.0)
         self.commands.base_velocity.rel_standing_envs = 0.15
         self.commands.base_velocity.rel_heading_envs = 0.0
