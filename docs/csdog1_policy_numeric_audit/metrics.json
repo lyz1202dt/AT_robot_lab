@@ -1,0 +1,82 @@
+{
+  "method": "Actual deployment MNNModel::Impl::compute CPU runtime (2 threads) versus ONNX Runtime CPU on identical observed 282-D histories; rl_sar observation algebra and actual StopPhaseClock; no robot connection.",
+  "samples": 965,
+  "onnx_input": "obs_history",
+  "onnx_output": "actions",
+  "hashes": {
+    "/home/lyz/\u684c\u9762/cyberstartrainanddeploy/policy.onnx": "f995ff2dfa4668ee31caad5d72297cf3c875109a6ccd7615e5317d073efa6de1",
+    "/space2/Project/rl_sar/policy/csdog1/robot_lab/policy.onnx": "f995ff2dfa4668ee31caad5d72297cf3c875109a6ccd7615e5317d073efa6de1",
+    "/home/lyz/\u684c\u9762/cyberstartrainanddeploy/Cyberstar_rl_deploy/src/cyber1_edu_sdk/policy/policy_exported3.mnn": "62771d7e992683ce013283a86f4a01d80090615869b82652379ef309b20f78b1"
+  },
+  "conversion": {
+    "all_finite": true,
+    "max_abs_raw_action_error": 0.0001220703125,
+    "mean_abs_raw_action_error": 1.734137299536087e-06,
+    "p99_abs_raw_action_error": 3.167148679494858e-05,
+    "max_abs_clipped_target_conversion_error_rad": 2.6702880859375e-05,
+    "allclose_atol_1e-4_rtol_1e-4": true
+  },
+  "segments": {
+    "stand": {
+      "samples": 60,
+      "max_raw_conversion_error": 1.6689300537109375e-06,
+      "max_history_error_same_phase_reference": 0.0,
+      "max_phase_feature_difference_vs_sar_clock": 0.0,
+      "max_target_postprocessing_difference_rad": 0.0
+    },
+    "moving_random": {
+      "samples": 500,
+      "max_raw_conversion_error": 2.9802322387695312e-06,
+      "max_history_error_same_phase_reference": 2.980232238769531e-07,
+      "max_phase_feature_difference_vs_sar_clock": 5.960464477539063e-08,
+      "max_target_postprocessing_difference_rad": 0.0
+    },
+    "low_speed": {
+      "samples": 90,
+      "max_raw_conversion_error": 1.6689300537109375e-06,
+      "max_history_error_same_phase_reference": 3.5762786865234375e-07,
+      "max_phase_feature_difference_vs_sar_clock": 1.9921150207519531,
+      "max_target_postprocessing_difference_rad": 0.0
+    },
+    "moving": {
+      "samples": 80,
+      "max_raw_conversion_error": 2.5033950805664062e-06,
+      "max_history_error_same_phase_reference": 2.384185791015625e-07,
+      "max_phase_feature_difference_vs_sar_clock": 5.960464477539063e-08,
+      "max_target_postprocessing_difference_rad": 0.0
+    },
+    "release": {
+      "samples": 65,
+      "max_raw_conversion_error": 1.6689300537109375e-06,
+      "max_history_error_same_phase_reference": 2.980232238769531e-07,
+      "max_phase_feature_difference_vs_sar_clock": 5.960464477539063e-08,
+      "max_target_postprocessing_difference_rad": 1.1042389869689941
+    },
+    "heading_hold": {
+      "samples": 90,
+      "max_raw_conversion_error": 2.2649765014648438e-06,
+      "max_history_error_same_phase_reference": 0.0625,
+      "max_phase_feature_difference_vs_sar_clock": 5.960464477539063e-08,
+      "max_target_postprocessing_difference_rad": 0.0
+    },
+    "clip_stress": {
+      "samples": 80,
+      "max_raw_conversion_error": 0.0001220703125,
+      "max_history_error_same_phase_reference": 3.5762786865234375e-07,
+      "max_phase_feature_difference_vs_sar_clock": 5.960464477539063e-08,
+      "max_target_postprocessing_difference_rad": 0.0
+    }
+  },
+  "config_checks": {
+    "reference_equal": true,
+    "command_scale_equal": true,
+    "kp_equal": true,
+    "kd_equal": true
+  },
+  "initialization": {
+    "rl_sar": "five remaining synthetic nominal frames after inserting first actual observation",
+    "sim2real": "six copies of first actual observation",
+    "example_first_input_max_abs_history_difference": 2.528949737548828,
+    "synthetic_frames_fully_replaced_after_policy_steps": 6
+  }
+}
