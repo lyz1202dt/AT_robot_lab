@@ -6,6 +6,8 @@ from pathlib import Path
 from isaaclab.app import AppLauncher
 
 parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("--task", default="RobotLab-Isaac-Velocity-Flat-CSDog1-282-DomainRand-v0",
+                    choices=["RobotLab-Isaac-Velocity-Flat-CSDog1-282-DomainRand-v0", "RobotLab-Isaac-Velocity-Stairs-CSDog1-282-v0"])
 parser.add_argument("--num_envs", type=int, default=16)
 parser.add_argument("--steps", type=int, default=600)
 parser.add_argument("--output_dir", default="outputs/csdog1_migration")
@@ -31,19 +33,21 @@ from robot_lab.him import (
 )
 from robot_lab.tasks.manager_based.locomotion.velocity.config.quadruped.csdog1.agents.rsl_rl_him_cfg import (
     CSDog1Flat282DomainRandHIMRunnerCfg,
+    CSDog1Stairs282HIMRunnerCfg,
 )
 from robot_lab.tasks.manager_based.locomotion.velocity.config.quadruped.csdog1.cyberstar.asset import point_inertia
 
 output = Path(args.output_dir).resolve()
 output.mkdir(parents=True, exist_ok=True)
-task = "RobotLab-Isaac-Velocity-Flat-CSDog1-282-DomainRand-v0"
+task = args.task
+is_stairs = "Stairs" in task
 cfg = parse_env_cfg(task, device=args.device or "cuda:0", num_envs=args.num_envs)
 cfg.scene.terrain.terrain_generator.num_rows = 2
 cfg.scene.terrain.terrain_generator.num_cols = 8
 cfg.scene.terrain.max_init_terrain_level = None
 cfg.scene.terrain.terrain_generator.use_cache = False
 env = gym.make(task, cfg=cfg)
-agent = CSDog1Flat282DomainRandHIMRunnerCfg()
+agent = CSDog1Stairs282HIMRunnerCfg() if is_stairs else CSDog1Flat282DomainRandHIMRunnerCfg()
 wrapped = HIMVecEnvWrapper(
     env,
     clip_actions=100.,
@@ -55,6 +59,11 @@ wrapped = HIMVecEnvWrapper(
 runner = HIMOnPolicyRunner(wrapped, agent.to_dict(), log_dir=None, device=cfg.sim.device)
 assert wrapped.num_obs == 282 and wrapped.num_privileged_obs == 491
 runtime = env.unwrapped.cyberstar
+assert len(runtime.reward_names) == (85 if is_stairs else 78)
+if is_stairs:
+    assert runtime.flat_env_mask.any() and (~runtime.flat_env_mask).any()
+    targets = runtime.command_targets[~runtime.flat_env_mask, :2]
+    assert not ((targets[:, 0].abs() > 0) & (targets[:, 1].abs() > 0)).any()
 robot = env.unwrapped.scene["robot"]
 assert robot.num_bodies == 17
 assert len(set(env.unwrapped._foot_sensor_ids)) == 4
@@ -140,7 +149,7 @@ with torch.inference_mode():
     scripted = torch.jit.load(str(output / "policy.pt"))
     torch.testing.assert_close(scripted(probe.cpu()), model.act_inference(probe).cpu())
 print(
-    "CSDOG1_MIGRATION_OK: 282 actor / 491 critic / 78 rewards / independent FOOT contacts / "
+    f"CSDOG1_MIGRATION_OK: {task} / 282 actor / 491 critic / {len(runtime.reward_names)} rewards / independent FOOT contacts / "
     "source checkpoint parity / physics rollout / PPO update / JIT + ONNX + metadata export",
     flush=True,
 )

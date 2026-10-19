@@ -4,6 +4,8 @@
 from isaaclab.utils import configclass
 from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg, RslRlPpoAlgorithmCfg
 
+from ..cyberstar.stairs_runtime import stairs_config
+
 
 @configclass
 class CSDog1HIMActorCriticCfg(RslRlPpoActorCriticCfg):
@@ -104,18 +106,15 @@ class CSDog1Flat282DomainRandHIMRunnerCfg(CSDog1Flat282HIMRunnerCfg):
 
 @configclass
 class CSDog1Stairs282HIMRunnerCfg(CSDog1Flat282DomainRandHIMRunnerCfg):
-    seed = 42
+    """Start stairs from robust flat weights with fresh Adam moments."""
 
     def __post_init__(self):
         super().__post_init__()
 
-        self.max_iterations = 500
+        reference = stairs_config()
+        self.max_iterations = reference["stages"][str(reference["stage"])]["iterations"]
         self.save_interval = 50
         self.experiment_name = "csdog1_stairs_282"
-        self.resume = False
-        self.source_checkpoint = ""
-        self.load_optimizer = True
-        self.clip_actions = None
-        self.algorithm.learning_rate = 1.0e-4
-        self.algorithm.entropy_coef = 0.0015
-        self.algorithm.schedule = "adaptive"
+        self.resume = True
+        self.source_checkpoint = "logs/rsl_rl/csdog1_flat_282_domain_rand/flat_282/model_2000.pt"
+        self.load_optimizer = False

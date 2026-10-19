@@ -48,7 +48,7 @@ gym.register(
 
 gym.register(
     id="RobotLab-Isaac-Velocity-Stairs-CSDog1-282-v0",
-    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    entry_point=f"{__name__}.cyberstar.stairs_lab:CSDog1CyberstarStairsEnv",
     disable_env_checker=True,
     kwargs={
         "env_cfg_entry_point": f"{__name__}.stairs_env_cfg:CSDog1Stairs282EnvCfg",

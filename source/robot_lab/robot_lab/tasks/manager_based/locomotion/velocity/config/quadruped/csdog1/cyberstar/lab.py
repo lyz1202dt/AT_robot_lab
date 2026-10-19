@@ -26,6 +26,8 @@ class StructuredVelocityCommand(CommandTerm):
         for value in self.metrics.values():
             value[ids] = 0
         self._env.cyberstar.reset(ids)
+        if hasattr(self._env.cyberstar, "stair_success"):
+            metrics["stair_success"] = self._env.cyberstar.stair_success.item()
         self._env._cyberstar_obs_step = -1
         return metrics
 
@@ -110,6 +112,8 @@ def reset_robot(env, env_ids):
     state = robot.data.default_root_state[ids].clone()
     state[:, :3] += env.scene.env_origins[ids]
     state[:, :2] += torch.empty(count,2,device=env.device).uniform_(-1,1)
+    if hasattr(env, "_place_stair_reset"):
+        env._place_stair_reset(state, ids)
     # Source resets use the initial quaternion, with mild 6-D velocity variation.
     velocity_limit = runtime.cfg.init_state.reset_root_velocity_range
     state[:, 7:13] = torch.empty(count,6,device=env.device).uniform_(-velocity_limit,velocity_limit) if not runtime.cfg.env.test else 0
@@ -133,8 +137,10 @@ def reset_robot(env, env_ids):
 
 class CSDog1CyberstarEnv(ManagerBasedRLEnv):
     """Preserve source ordering: state/callback → termination/reward → reset/push → history."""
+    runtime_type = CyberstarRuntime
+
     def load_managers(self):
-        self.cyberstar = CyberstarRuntime(self.num_envs,self.device,self.step_dt,self.cfg.cyberstar_config)
+        self.cyberstar = self.runtime_type(self.num_envs,self.device,self.step_dt,self.cfg.cyberstar_config)
         self.cyberstar.cfg.env.test = self.cfg.cyberstar_play
         self._cyberstar_obs_step = -1
         robot = self.scene["robot"]
@@ -149,6 +155,7 @@ class CSDog1CyberstarEnv(ManagerBasedRLEnv):
         self.cyberstar.penalised_contact_indices = torch.tensor([4 + self._sensor_ids.index(i) for i in penalty_ids],device=self.device)
         self.cyberstar._velocity_writer = self._write_cyberstar_velocity
         self.cyberstar._height_query = self._terrain_height_at
+        self._configure_cyberstar_terrain()
         self._sync_cyberstar()
         self.cyberstar.dof_pos_limits = robot.data.soft_joint_pos_limits[0,self._joint_ids].clone()
         super().load_managers()
@@ -156,6 +163,9 @@ class CSDog1CyberstarEnv(ManagerBasedRLEnv):
         self.reward_manager = Ji22RewardManager(self.cfg.rewards,self)
         self._randomize_startup()
         self._cyberstar_obs_step = -1
+
+    def _configure_cyberstar_terrain(self):
+        pass
 
     def _sync_cyberstar(self):
         runtime, data = self.cyberstar, self.scene["robot"].data

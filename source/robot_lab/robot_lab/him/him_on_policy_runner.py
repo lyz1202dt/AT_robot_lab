@@ -176,27 +176,48 @@ class HIMOnPolicyRunner:
 
     def load(self, path: str, load_optimizer: bool | None = None):
         loaded_dict = torch.load(path, map_location=self.device)
-        self._load_model_state(loaded_dict["model_state_dict"])
+        model_changed = self._load_model_state(loaded_dict["model_state_dict"])
         if load_optimizer is None:
             load_optimizer = self.cfg.get("load_optimizer", True)
+        if load_optimizer and model_changed:
+            print("[WARN] HIM model tensors changed during loading. Optimizers start fresh.")
+            load_optimizer = False
         if load_optimizer and "optimizer_state_dict" in loaded_dict:
-            try:
-                self.alg.optimizer.load_state_dict(loaded_dict["optimizer_state_dict"])
-            except (RuntimeError, ValueError):
-                print("[WARN] HIM optimizer state is incompatible with the current model. Skipping optimizer load.")
+            self._load_optimizer_state(self.alg.optimizer, loaded_dict["optimizer_state_dict"], "HIM")
         if load_optimizer and "estimator_optimizer_state_dict" in loaded_dict:
-            try:
-                self.alg.actor_critic.estimator.optimizer.load_state_dict(
-                    loaded_dict["estimator_optimizer_state_dict"]
-                )
-            except (RuntimeError, ValueError):
-                print("[WARN] HIM estimator optimizer state is incompatible. Skipping estimator optimizer load.")
+            self._load_optimizer_state(
+                self.alg.actor_critic.estimator.optimizer,
+                loaded_dict["estimator_optimizer_state_dict"], "HIM estimator",
+            )
         elif load_optimizer:
             print("[WARN] HIM checkpoint has no estimator optimizer state. Estimator optimizer starts fresh.")
         self.current_learning_iteration = int(loaded_dict.get("iter", 0))
 
+    @staticmethod
+    def _load_optimizer_state(optimizer, state_dict, name):
+        # Adam accepts mismatched moment shapes in load_state_dict and fails only
+        # on step(). Validate against live parameters before installing any state.
+        previous_state = optimizer.state_dict()
+        try:
+            groups = state_dict["param_groups"]
+            if len(groups) != len(optimizer.param_groups):
+                raise ValueError("Parameter group count changed")
+            for saved_group, current_group in zip(groups, optimizer.param_groups, strict=True):
+                if len(saved_group["params"]) != len(current_group["params"]):
+                    raise ValueError("Parameter count changed")
+                for saved_id, param in zip(saved_group["params"], current_group["params"], strict=True):
+                    for key, value in state_dict["state"].get(saved_id, {}).items():
+                        if isinstance(value, torch.Tensor) and key != "step" and value.shape != param.shape:
+                            raise ValueError(f"{key}: checkpoint={tuple(value.shape)}, current={tuple(param.shape)}")
+            optimizer.load_state_dict(state_dict)
+        except (KeyError, RuntimeError, ValueError) as error:
+            optimizer.load_state_dict(previous_state)
+            print(f"[WARN] {name} optimizer state is incompatible; keeping current state: {error}")
+
     def _load_model_state(self, loaded_state: dict[str, torch.Tensor]):
         current_state = self.alg.actor_critic.state_dict()
+        critic_weight = loaded_state.get("critic.0.weight")
+        critic_changed = critic_weight is not None and critic_weight.shape != current_state["critic.0.weight"].shape
         if hasattr(self.env.unwrapped, "cyberstar"):
             from .source_checkpoint import migrate_source_state
 
@@ -220,6 +241,7 @@ class HIMOnPolicyRunner:
                 print(f"  - ... {len(skipped) - 20} more tensors skipped")
         if not compatible_state:
             raise RuntimeError("No compatible HIM model tensors were found in the checkpoint.")
+        return critic_changed or bool(skipped) or len(compatible_state) != len(current_state)
 
     def get_inference_policy(self, device: str | None = None):
         if device is None:

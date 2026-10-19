@@ -5,7 +5,8 @@
     "legged_gym/envs/base/legged_robot.py": "67e76daddf6cbed04f3e7ac1d6030bbe5aec21a83854c23b71f399ccb15dab01",
     "legged_gym/envs/csdog1/csdog1_flat_47_base.py": "a096d5bac2528a1cae5028b4c6ad7eb460ee40d43bdfd796cf4e69bfd299f3f7",
     "legged_gym/envs/csdog1/csdog1_mixins.py": "030d57ba1fa8980a0926df6daae443859e4f3f2039cba9e86a65d298ce497c52",
-    "legged_gym/envs/csdog1/csdog1_flat_282_domain_rand.py": "153dee124aab99a7c023ecc2a0ea5ae662cbd4ece11d0feef8777fcc6ae4c59c"
+    "legged_gym/envs/csdog1/csdog1_flat_282_domain_rand.py": "153dee124aab99a7c023ecc2a0ea5ae662cbd4ece11d0feef8777fcc6ae4c59c",
+    "legged_gym/envs/csdog1/csdog1_stairs_282.py": "c270f35f1afa8a336d86597f2ad8ac657c769dcda1b13fa10f1faa26c9436401"
   },
   "migration": "Tensor formulas preserved; Isaac Gym state writes and terrain access replaced by Isaac Lab adapter."
 }

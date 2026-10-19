@@ -230,8 +230,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
                 resume_path = PROJECT_ROOT / resume_path
             if not resume_path.is_file():
                 raise FileNotFoundError(
-                    f"CSDog1 robustness fine-tuning requires the source flat-282 checkpoint: {resume_path}. "
-                    "Pass --resume --checkpoint /path/to/model_1000.pt, or use agent.resume=false for a fresh run."
+                    f"CSDog1 fine-tuning requires its source checkpoint: {resume_path}. "
+                    "Pass --resume --checkpoint /path/to/model.pt, or use agent.resume=false for a fresh run."
                 )
             resume_path = str(resume_path)
         else:
