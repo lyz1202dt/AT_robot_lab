@@ -1,7 +1,8 @@
-# CSDog1 flat-282 DomainRand 迁移
+# CSDog1 flat-282 DomainRand 与台阶任务迁移
 
 `RobotLab-Isaac-Velocity-Flat-CSDog1-282-DomainRand-v0` 现在运行 Cyberstar 的完整 flat-282 robustness 任务。
-默认入口为 RSL-RL HIM；原有 flat47、flat282、rough、stairs 的环境配置保持原来的任务逻辑。
+`RobotLab-Isaac-Velocity-Stairs-CSDog1-282-v0` 复用这一运行时，并增加参考工程的台阶指令、地形和奖励。
+默认入口为 RSL-RL HIM；原有 flat47、flat282、rough 保留原来的任务逻辑。
 
 ## 迁移内容
 
@@ -91,3 +92,32 @@ CPU 的 14 项检查覆盖历史reset、491维布局、观测限幅、20 ms延�
 标准 `train.py` 的 Hydra 参数解析、源格式续训（1000→1002）、配置/模型保存及 `play.py --export_only` 也已实测。
 当前工程和参考目录中未找到训练好的源 `model_1000.pt`；需要自行指定该权重，才能进行与原流程一致的 DomainRand 微调。
 短程检查验证可执行性和有限数值，不作为步态收敛或实机效果证明。
+
+## 台阶训练
+
+台阶任务保留相同的 282 维 Actor 和 491 维 Critic，包括观测顺序、缩放、默认站姿及动作延迟。
+`cyberstar/stairs_config.json` 冻结参考工程当前第 4 阶段配置：3–20 cm 台阶，30% 平地回放；台阶部分为 65% 上行、35% 下行。
+256 个地形块均匀复用；台阶指令为 50% 前进、25% 左移、25% 右移，前进与侧移互斥。
+85 个非终止奖励项包含落脚冲击、落脚速度、支撑和前进进度；下台阶加强落脚惩罚。
+默认从鲁棒平地的 `model_2000.pt` 开始，再训练 1200 iterations，固定学习率 `5e-5`，entropy `0.003`，不恢复 Adam 状态。
+已训练好的 491 维台阶 checkpoint 可以通过 `--checkpoint` 显式指定：
+
+```bash
+python scripts/reinforcement_learning/rsl_rl/train.py \
+  --task RobotLab-Isaac-Velocity-Stairs-CSDog1-282-v0 --headless \
+  --resume --checkpoint /absolute/path/to/model_10000.pt
+```
+
+台阶配置不启用平地的高级推扰课程，使用每 15 s、平面速度 ±0.5 m/s 的基础推扰。
+基础推扰通过 Lab 的速度写入接口实现，避免缺失父类 `_push_robots()`；刚 reset 的环境不立即施加推扰。
+台阶任务的 PhysX `gpu_collision_stack_size` 至少为 `134217728`（128 MiB），用于容纳大量机器人与台阶网格的碰撞。
+若日志仍提示 `collisionStackSize buffer overflow`，应按实际需求继续增加该容量或减少 `--num_envs`；接触已被丢弃时不应忽略错误继续训练。
+
+CPU 检查现有 23 项，覆盖基础推扰、台阶互斥指令、491 维权重迁移、Adam 状态兼容性及实际 HIM PPO 更新。
+台阶仿真检查：
+
+```bash
+python scripts/tools/check_csdog1_migration.py \
+  --task RobotLab-Isaac-Velocity-Stairs-CSDog1-282-v0 \
+  --headless --num_envs 16 --steps 120 --output_dir outputs/csdog1_stairs_check
+```

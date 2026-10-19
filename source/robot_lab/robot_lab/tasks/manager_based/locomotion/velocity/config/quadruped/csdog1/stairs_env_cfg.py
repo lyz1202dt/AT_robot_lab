@@ -16,6 +16,9 @@ class CSDog1Stairs282EnvCfg(CSDog1CyberstarDomainRandEnvCfg):
 
     def __post_init__(self):
         super().__post_init__()
+        # Thousands of robots on stair triangle meshes exceed PhysX's default
+        # 64 MiB narrow-phase collision stack (about 78 MiB in the failing run).
+        self.sim.physx.gpu_collision_stack_size = max(self.sim.physx.gpu_collision_stack_size, 2**27)
         terrain = self.cyberstar_config["terrain"]
         self.scene.terrain.terrain_generator = CyberstarStairsTerrainGeneratorCfg(
             size=(terrain["terrain_length"], terrain["terrain_width"]),

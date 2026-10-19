@@ -20,6 +20,24 @@ class TensorBase:
     def reset_idx(self, env_ids):
         pass
 
+    def _push_robots(self):
+        """Source planar push for tasks without the advanced push curriculum.
+
+        The Lab adapter commits the selected root velocities to the simulator.
+        Leave freshly reset and non-selected environments untouched.
+        """
+        interval = max(1, int(self.cfg.domain_rand.push_interval))
+        env_ids = ((self.episode_length_buf > 0) & (self.episode_length_buf % interval == 0)).nonzero(
+            as_tuple=False
+        ).flatten()
+        if len(env_ids) == 0:
+            return
+        max_vel = self.cfg.domain_rand.max_push_vel_xy
+        self.root_states[env_ids, 7:9] = torch_rand_float(
+            -max_vel, max_vel, (len(env_ids), 2), device=self.device
+        )
+        self._write_root_velocity(env_ids)
+
     def _update_straight_motion_steps(self):
         """Track time since a pure sagittal command began for reward weighting."""
         straight = self._straight_command_mask()
