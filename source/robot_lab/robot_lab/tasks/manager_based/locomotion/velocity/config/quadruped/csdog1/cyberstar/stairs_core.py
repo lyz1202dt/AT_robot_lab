@@ -227,7 +227,13 @@ class Csdog1Stairs282Mixin:
             quality * in_air.float(), dim=1
         ) / airborne_count.clamp_min(1)
         stair_quality *= (airborne_count > 0).float()
-        stair_quality *= self._stair_progress_gate()
+        # Preserve a learning signal when the commanded robot is blocked.
+        # Standing still with a zero command must never earn swing reward.
+        progress = self._stair_progress_gate()
+        floor = self.cfg.rewards.stair_clearance_progress_floor
+        stair_quality *= (
+            floor + (1.0 - floor) * progress
+        ) * self._stair_motion_mask().float()
         return (
             flat_quality * self.flat_env_mask.float()
             + stair_quality
@@ -309,6 +315,16 @@ class Csdog1Stairs282Mixin:
             self.cfg.rewards.stair_base_height_target
         )
         return torch.square(error) * (~self.flat_env_mask).float()
+
+    def _reward_stand_height_quality(self):
+        """Measure standing height above local terrain, including stair landings."""
+        error = torch.square(
+            self._local_base_height().squeeze(1)
+            - self.cfg.rewards.stand_base_height_target
+        )
+        return (
+            1.0 / (1.0 + error / self.cfg.rewards.stand_height_sigma)
+        ) * self._stand_reward_weight()
 
     def _reward_stair_heading_alignment(self):
         error = wrap_to_pi(

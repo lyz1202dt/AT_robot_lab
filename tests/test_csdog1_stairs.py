@@ -144,6 +144,36 @@ class StairRuntimeTest(unittest.TestCase):
         self.assertTrue(all(math.isfinite(loss) for loss in losses))
         self.assertFalse(torch.equal(before, algorithm.actor_critic.critic[0].weight))
 
+    def test_blocked_clearance_has_signal_but_zero_command_does_not(self):
+        runtime = self.runtime
+        runtime.commands[:] = 0.
+        runtime.command_targets[:] = 0.
+        runtime.commands[:, 0] = .5
+        runtime.command_targets[:, 0] = .5
+        runtime.base_lin_vel[:] = 0.
+        target = (runtime.stair_step_heights.abs() + runtime.cfg.rewards.clearance_margin).clamp(
+            runtime.cfg.rewards.clearance_target_min, runtime.cfg.rewards.clearance_target_max
+        )
+        runtime.rigid_body_states[:, runtime.feet_indices, 2] = target[:, None]
+        runtime.contact_forces[:] = 0.
+        blocked = runtime._reward_feet_clearance()
+        self.assertTrue((blocked[8:] > 0).all())
+        runtime.base_lin_vel[:, 0] = .5
+        self.assertTrue((runtime._reward_feet_clearance()[8:] > blocked[8:]).all())
+        runtime.commands[:] = 0.
+        runtime.command_targets[:] = 0.
+        self.assertEqual(runtime._reward_feet_clearance().count_nonzero(), 0)
+
+    def test_stand_height_quality_is_invariant_to_terrain_elevation(self):
+        runtime = self.runtime
+        runtime.commands[:] = 0.
+        runtime.stand_blend[:] = 1.
+        runtime.root_states[:, 2] = runtime.cfg.rewards.stand_base_height_target
+        initial = runtime._reward_stand_height_quality().clone()
+        runtime.root_states[:, 2] += .4
+        runtime._height_query = lambda positions: torch.full_like(positions[..., 0], .4)
+        torch.testing.assert_close(runtime._reward_stand_height_quality(), initial)
+
 
 class StairGeometryTest(unittest.TestCase):
     def test_distribution_and_ascent_descent_sign(self):
