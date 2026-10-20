@@ -1,5 +1,6 @@
 """Stair-specific tensor state layered over the migrated robust-flat runtime."""
 import json
+import os
 from pathlib import Path
 
 import torch
@@ -9,7 +10,22 @@ from .stairs_core import Csdog1Stairs282Mixin
 
 
 def stairs_config():
-    return json.loads(Path(__file__).with_name("stairs_config.json").read_text())
+    """Resolve one stage for both terrain generation and the training budget.
+
+    CSDOG1_STAIR_STAGE overrides the JSON default for training and playback.
+    Stages are selected between runs; training never advances them automatically.
+    """
+    config = json.loads(Path(__file__).with_name("stairs_config.json").read_text())
+    selected = os.environ.get("CSDOG1_STAIR_STAGE", str(config["stage"]))
+    if selected not in config["stages"]:
+        raise ValueError(f"Invalid CSDOG1_STAIR_STAGE {selected!r}; expected one of {', '.join(config['stages'])}")
+    config["stage"] = int(selected)
+    stage = config["stages"][selected]
+    terrain = config["env"]["terrain"]
+    terrain["stair_height_bands"] = stage["height_bands"]
+    terrain["stair_step_height_min"] = stage["min_height"]
+    terrain["stair_step_height_max"] = stage["max_height"]
+    return config
 
 
 class CyberstarStairsRuntime(Csdog1Stairs282Mixin, CyberstarRuntime):

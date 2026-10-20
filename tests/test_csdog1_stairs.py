@@ -1,6 +1,8 @@
 """Stair runtime, source checkpoint transfer and Adam regression checks on CPU."""
 import importlib.util
+import json
 import math
+import os
 import sys
 import tempfile
 import unittest
@@ -176,6 +178,33 @@ class StairRuntimeTest(unittest.TestCase):
 
 
 class StairGeometryTest(unittest.TestCase):
+    def test_each_stage_controls_generated_heights(self):
+        for stage in range(5):
+            with self.subTest(stage=stage), patch.dict(os.environ, {'CSDOG1_STAIR_STAGE': str(stage)}):
+                config = stairs_config()
+                reference = config['stages'][str(stage)]
+                terrain = config['env']['terrain']
+                self.assertEqual(config['stage'], stage)
+                self.assertEqual(terrain['stair_height_bands'], reference['height_bands'])
+                self.assertEqual(terrain['stair_step_height_min'], reference['min_height'])
+                self.assertEqual(terrain['stair_step_height_max'], reference['max_height'])
+                specs = stair_patch_specs(256, terrain['flat_terrain_ratio'], terrain['stair_up_ratio'],
+                                         terrain['stair_height_bands'], np.random.default_rng(1))
+                heights = [abs(height) for height, _ in specs if height]
+                self.assertGreaterEqual(min(heights), reference['min_height'])
+                self.assertLessEqual(max(heights), reference['max_height'])
+                self.assertEqual(sum(height == 0 for height, _ in specs), 77)
+
+    def test_default_stage_and_invalid_override(self):
+        with patch.dict(os.environ):
+            os.environ.pop('CSDOG1_STAIR_STAGE', None)
+            raw = json.loads((PACKAGE / 'stairs_config.json').read_text())
+            self.assertEqual(stairs_config()['stage'], raw['stage'])
+        for invalid in ('-1', '5', 'abc', ''):
+            with self.subTest(invalid=invalid), patch.dict(os.environ, {'CSDOG1_STAIR_STAGE': invalid}):
+                with self.assertRaisesRegex(ValueError, 'CSDOG1_STAIR_STAGE'):
+                    stairs_config()
+
     def test_distribution_and_ascent_descent_sign(self):
         config = stairs_config()['env']['terrain']
         specs = stair_patch_specs(256, .3, .65, config['stair_height_bands'], np.random.default_rng(1))
