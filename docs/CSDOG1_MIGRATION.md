@@ -96,7 +96,25 @@ CPU 的 14 项检查覆盖历史reset、491维布局、观测限幅、20 ms延�
 ## 台阶训练
 
 台阶任务保留相同的 282 维 Actor 和 491 维 Critic，包括观测顺序、缩放、默认站姿及动作延迟。
-`cyberstar/stairs_config.json` 冻结参考工程当前第 4 阶段配置：3–20 cm 台阶，30% 平地回放；台阶部分为 65% 上行、35% 下行。
+`cyberstar/stairs_config.json` 基于参考工程第 4 阶段配置：3–20 cm 台阶，30% 平地回放；台阶部分为 65% 上行、35% 下行。
+
+为改善低抬腿和台阶边缘卡脚，当前奖励参数在参考配置上作了以下调整：
+
+| 参数 | 原值 | 当前值 |
+| --- | --- | --- |
+| `clearance_margin` | 0.03 m | 0.06 m |
+| `clearance_target_min` / `clearance_target_max` | 0.07 / 0.22 m | 0.10 / 0.26 m |
+| `feet_clearance_sigma` | 0.04 m | 0.07 m |
+| `scales.feet_clearance` | 0.5 | 1.5 |
+| `stair_air_time_target` | 0.25 s | 0.30 s |
+| `scales.feet_air_time` | 0.25 | 0.4 |
+
+台阶抬脚目标为 `clamp(abs(step_height) + clearance_margin, min, max)`，
+相对于脚当前位置的地形高度计算。因此 20 cm 台阶上的目标由 22 cm 提高到 26 cm；
+扩大 sigma 可让尚未达到目标的摆腿获得更连续的奖励。
+`feet_clearance_sigma` 和上述两个奖励权重也影响该任务中的平地回放，平地抬脚目标不变。
+抬脚和腾空奖励仍受实际前进速度门控，完全卡住时不会提供脱困奖励。
+修改需重新训练或微调后生效；应对比卡脚次数、通过率、平地步态及落地冲击，不能仅凭 CPU 检查判断训练改善。
 256 个地形块均匀复用；台阶指令为 50% 前进、25% 左移、25% 右移，前进与侧移互斥。
 85 个非终止奖励项包含落脚冲击、落脚速度、支撑和前进进度；下台阶加强落脚惩罚。
 默认从鲁棒平地的 `model_2000.pt` 开始，再训练 1200 iterations，固定学习率 `5e-5`，entropy `0.003`，不恢复 Adam 状态。
