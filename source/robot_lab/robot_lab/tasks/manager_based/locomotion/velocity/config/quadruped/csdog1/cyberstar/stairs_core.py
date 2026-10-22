@@ -227,13 +227,7 @@ class Csdog1Stairs282Mixin:
             quality * in_air.float(), dim=1
         ) / airborne_count.clamp_min(1)
         stair_quality *= (airborne_count > 0).float()
-        # Preserve a learning signal when the commanded robot is blocked.
-        # Standing still with a zero command must never earn swing reward.
-        progress = self._stair_progress_gate()
-        floor = self.cfg.rewards.stair_clearance_progress_floor
-        stair_quality *= (
-            floor + (1.0 - floor) * progress
-        ) * self._stair_motion_mask().float()
+        stair_quality *= self._stair_progress_gate()
         return (
             flat_quality * self.flat_env_mask.float()
             + stair_quality
