@@ -60,6 +60,8 @@ class HIMOnPolicyRunner:
         self.writer = None
         self.tot_timesteps = 0
         self.tot_time = 0.0
+        self._session_time = 0.0
+        self._session_iterations = 0
         self.current_learning_iteration = 0
         self.latest_episode_metrics: dict[str, float] = {}
         self.latest_mean_reward: float | None = None
@@ -166,6 +168,8 @@ class HIMOnPolicyRunner:
             "optimizer_state_dict": self.alg.optimizer.state_dict(),
             "estimator_optimizer_state_dict": self.alg.actor_critic.estimator.optimizer.state_dict(),
             "iter": self.current_learning_iteration,
+            "tot_time": self.tot_time,
+            "tot_timesteps": self.tot_timesteps,
             "infos": {
                 "num_one_step_obs": self.alg.actor_critic.num_one_step_obs,
                 "vel_slice": self.alg.actor_critic.vel_slice,
@@ -192,6 +196,12 @@ class HIMOnPolicyRunner:
         elif load_optimizer:
             print("[WARN] HIM checkpoint has no estimator optimizer state. Estimator optimizer starts fresh.")
         self.current_learning_iteration = int(loaded_dict.get("iter", 0))
+        # Older checkpoints do not contain cumulative statistics. Keep their
+        # unknown history out of the ETA, which uses only this learning session.
+        self.tot_time = float(loaded_dict.get("tot_time", 0.0))
+        self.tot_timesteps = int(loaded_dict.get("tot_timesteps", 0))
+        if "tot_time" not in loaded_dict or "tot_timesteps" not in loaded_dict:
+            print("[WARN] HIM checkpoint has no complete timing/step history. Missing counters start at zero.")
 
     @staticmethod
     def _load_optimizer_state(optimizer, state_dict, name):
@@ -280,6 +290,8 @@ class HIMOnPolicyRunner:
         cur_reward_sum = torch.zeros(self.env.num_envs, dtype=torch.float, device=self.device)
         cur_episode_length = torch.zeros(self.env.num_envs, dtype=torch.float, device=self.device)
 
+        self._session_time = 0.0
+        self._session_iterations = 0
         tot_iter = self.current_learning_iteration + num_learning_iterations
         for iteration in range(self.current_learning_iteration, tot_iter):
             task_runtime = getattr(self.env.unwrapped, "cyberstar", None)
@@ -368,6 +380,10 @@ class HIMOnPolicyRunner:
         self.tot_timesteps += self.num_steps_per_env * self.env.num_envs
         self.tot_time += collection_time + learn_time
         iteration_time = collection_time + learn_time
+        self._session_time += iteration_time
+        self._session_iterations += 1
+        remaining_iterations = max(total_iterations - iteration - 1, 0)
+        eta = self._session_time / self._session_iterations * remaining_iterations
         fps = int(self.num_steps_per_env * self.env.num_envs / max(collection_time + learn_time, 1e-6))
         mean_reward = statistics.mean(rewbuffer) if rewbuffer else None
         mean_episode_length = statistics.mean(lenbuffer) if lenbuffer else None
@@ -446,7 +462,7 @@ class HIMOnPolicyRunner:
             f"{'Total timesteps:':>{pad}} {self.tot_timesteps}\n"
             f"{'Iteration time:':>{pad}} {iteration_time:.2f}s\n"
             f"{'Time elapsed:':>{pad}} {self._format_duration(self.tot_time)}\n"
-            f"{'ETA:':>{pad}} {self._format_duration(self.tot_time / max(iteration + 1, 1) * (total_iterations - iteration - 1))}\n"
+            f"{'ETA:':>{pad}} {self._format_duration(eta)}\n"
         )
         print(log_string, flush=True)
 
