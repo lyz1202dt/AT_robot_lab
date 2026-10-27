@@ -74,6 +74,8 @@ RUN bash -i -c 'source "${HOME}/.bashrc" && \
     ${ISAACLAB_PATH}/isaaclab.sh -p -c "import flatdict; import isaaclab"'
 
 # Install the robot_lab extension into the same Python environment.
+# Pin TensorDict after all dependency installs for compatibility with PyTorch 2.7.
+# Verify the training runner imports during the build.
 RUN bash -i -c 'source "${HOME}/.bashrc" && \
     if [[ -n "${BUILD_HTTP_PROXY_ARG}" || -n "${BUILD_HTTPS_PROXY_ARG}" || -n "${BUILD_ALL_PROXY_ARG}" ]]; then \
         export HTTP_PROXY="${BUILD_HTTP_PROXY_ARG}" && \
@@ -99,7 +101,9 @@ RUN bash -i -c 'source "${HOME}/.bashrc" && \
     fi && \
     export ISAACLAB_PATH=${ISAACLAB_PATH:-/workspace/isaaclab} && \
     cd ${DOCKER_ISAACLAB_EXTENSION_TEMPLATE_PATH}/source/robot_lab && \
-    ${ISAACLAB_PATH}/isaaclab.sh -p -m pip install -e .'
+    ${ISAACLAB_PATH}/isaaclab.sh -p -m pip install -e . && \
+    ${ISAACLAB_PATH}/isaaclab.sh -p -m pip install --no-deps "tensordict==0.12.1" && \
+    ${ISAACLAB_PATH}/isaaclab.sh -p -c "import tensordict; from rsl_rl.runners import DistillationRunner, OnPolicyRunner"'
 
 # make working directory as the Isaac Lab directory
 # this is the default directory when the container is run
