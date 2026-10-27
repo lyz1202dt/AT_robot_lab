@@ -28,8 +28,10 @@ class Dog03EnvCfgMixin:
         self.rewards.feet_gait.params["synced_feet_pair_names"] = (
             ("FL_FOOT", "RR_FOOT"), ("FR_FOOT", "RL_FOOT")
         )
-        self.rewards.base_height_l2.params["target_height"] = 0.385
-        self.rewards.feet_height_body.params["target_height"] = -0.32
+        # Nominal foot mesh bottom is z=-0.3215 m with the synced pose.
+        self.rewards.base_height_l2.params["target_height"] = 0.32
+        # About 5 cm of swing clearance above the nominal foot origins.
+        self.rewards.feet_height_body.params["target_height"] = -0.26
         self.rewards.feet_distance_y_exp.params["stance_width"] = 0.38
         # Raw-angle symmetry is biased by this CAD model's unequal joint zeros.
         self.rewards.joint_mirror.weight = 0.0

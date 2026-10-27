@@ -3,7 +3,7 @@
 The Python package is named `dog03`; assets remain under `data/Robots/03dog`.
 Run `python3 scripts/tools/prepare_03dog_urdf.py` after replacing the CAD export.
 The script preserves mesh filenames, inertias, joint frames, axes and the
-40 Nm / 30 rad/s motor limits. It normalizes link/joint names, makes mesh paths
+30 Nm / 30 rad/s motor limits. It normalizes link/joint names, makes mesh paths
 relative, and fixes the exported left rear foot joint to match the other feet.
 The robot has twelve driven joints and four fixed, separately reported feet.
 Isaac Lab imports the URDF automatically; no CSDog1 USD is needed.
@@ -16,11 +16,16 @@ Isaac Lab imports the URDF automatically; no CSDog1 USD is needed.
 | `right_back` | `RR` | `hip`, `thigh`, `calf` / `<leg>_<part>_joint` | `RR_FOOT` |
 
 Actions and joint observations follow FL, FR, RL, RR, each hip/thigh/calf.
-`robot_lab/assets/dog03.py` defines per-joint default angles because the CAD
-export uses different signs and zero offsets for different legs. Forward
-kinematics puts the foot origins at `(hip_x, +/-0.19, -0.37)` m relative to the
-base. The initial base height is 0.40 m, leaving about 1.5 cm of foot clearance;
-nominal PD gains are 30/1 and action scale is 0.25. These are starting training
+`robot_lab/assets/dog03.py` uses the default angles from
+`quadruped-robot-gc/policy/03dog/base.yaml`: hip/calf = 0 rad and thigh =
+-0.7854 rad on all four legs. All hip axes are local +X; the right front/rear
+thigh axes are local +Y,
+matching the deployment URDF and MJCF. Forward kinematics puts foot origins
+at approximately z=-0.30635 m and y=+/-0.186 m relative to the base; the
+lowest foot mesh point is z=-0.3215 m. Initial base height remains 0.40 m
+(about 7.85 cm clearance), with a 0.32 m base-height reward target and a
+-0.26 m body-relative swing-foot target. Nominal PD gains are 30/1, torque
+limits are 30 Nm and action scale is 0.25. These are starting training
 parameters and need validation in simulation and tuning for the real robot.
 
 All five tasks use `ManagerBasedRLEnv`, inheriting CSDog1's common manager

@@ -10,22 +10,22 @@ from isaaclab.assets.articulation import ArticulationCfg
 from robot_lab.assets import ISAACLAB_ASSETS_DATA_DIR
 
 
-# FL, FR, RL, RR; each hip/thigh/calf. The CAD axes have different signs and
-# zero offsets on different legs. These angles put the four foot origins at
-# (hip_x, +/-0.19, -0.37) m in the base frame (verified by forward kinematics).
+# Synced from quadruped-robot-gc/policy/03dog/base.yaml.
+# FL, FR, RL, RR; each hip/thigh/calf. All hip axes are +X; right thighs are +Y.
+# Foot origins are about z=-0.30635 m relative to the base at this pose.
 DOG03_JOINT_POS = {
-    "FL_hip_joint": 0.007997,
-    "FL_thigh_joint": -0.916405,
-    "FL_calf_joint": 0.517192,
-    "FR_hip_joint": -0.007253,
-    "FR_thigh_joint": 0.915949,
-    "FR_calf_joint": 0.516805,
-    "RL_hip_joint": -0.008011,
-    "RL_thigh_joint": -1.136067,
-    "RL_calf_joint": 0.536377,
-    "RR_hip_joint": 0.007946,
-    "RR_thigh_joint": 1.169253,
-    "RR_calf_joint": 0.517137,
+    "FL_hip_joint": 0.0,
+    "FL_thigh_joint": -0.7854,
+    "FL_calf_joint": 0.0,
+    "FR_hip_joint": 0.0,
+    "FR_thigh_joint": -0.7854,
+    "FR_calf_joint": 0.0,
+    "RL_hip_joint": 0.0,
+    "RL_thigh_joint": -0.7854,
+    "RL_calf_joint": 0.0,
+    "RR_hip_joint": 0.0,
+    "RR_thigh_joint": -0.7854,
+    "RR_calf_joint": 0.0,
 }
 
 DOG03_CFG = ArticulationCfg(
@@ -54,7 +54,8 @@ DOG03_CFG = ArticulationCfg(
         ),
     ),
     init_state=ArticulationCfg.InitialStateCfg(
-        # The lowest foot mesh points are at z ~= -0.3855 m in the base frame.
+        # The lowest foot mesh points are at z ~= -0.3215 m in the base frame.
+        # At 0.40 m the initial clearance is about 7.85 cm, matching MuJoCo.
         pos=(0.0, 0.0, 0.40),
         joint_pos=DOG03_JOINT_POS,
         joint_vel={".*": 0.0},
@@ -63,8 +64,8 @@ DOG03_CFG = ArticulationCfg(
     actuators={
         "legs": DelayedPDActuatorCfg(
             joint_names_expr=[".*_(hip|thigh|calf)_joint"],
-            # All twelve CAD joints specify 40 Nm and 30 rad/s.
-            effort_limit=40.0,
+            # Match the URDF and deployment limits: 30 Nm and 30 rad/s.
+            effort_limit=30.0,
             velocity_limit=30.0,
             stiffness=30.0,
             damping=1.0,
