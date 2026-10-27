@@ -2,21 +2,92 @@
 # SPDX-License-Identifier: Apache-2.0
 
 from isaaclab.utils import configclass
+from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg, RslRlPpoAlgorithmCfg
 
-from ...csdog1.agents.rsl_rl_him_cfg import CSDog1Flat282HIMRunnerCfg
-from ..curriculum import stairs_config
-from .rsl_rl_ppo_cfg import Dog03RunnerCfgMixin
+from ..cyberstar.stairs_runtime import stairs_iterations
 
 
 @configclass
-class Dog03Flat282HIMRunnerCfg(Dog03RunnerCfgMixin, CSDog1Flat282HIMRunnerCfg):
-    """47 x 6 observations, using the shared HIM estimator and export layout."""
+class Dog03HIMActorCriticCfg(RslRlPpoActorCriticCfg):
+    """03dog HIM policy with the same architecture and frame layout as CSDog1."""
+
+    class_name = "HIMActorCritic"
+    num_one_step_obs = 47
+    history_length = 6
+    history_order = "oldest_to_latest"
+    policy_frame_term_order = [
+        "phase",
+        "base_ang_vel",
+        "projected_gravity",
+        "velocity_commands",
+        "joint_pos",
+        "joint_vel",
+        "actions",
+    ]
+    estimator_target_term_names = [
+        "base_ang_vel",
+        "projected_gravity",
+        "joint_pos",
+        "joint_vel",
+        "actions",
+        "base_lin_vel",
+    ]
+    actor_current_frame = "last"
+    estimator_encoder_hidden_dims = [128, 64, 16]
+    estimator_target_hidden_dims = [128, 64]
+    estimator_learning_rate = 1.0e-3
+    estimator_max_grad_norm = 10.0
+    estimator_num_prototypes = 32
+    estimator_temperature = 3.0
+    estimator_vel_slice = None
+    estimator_target_slice = None
+
+
+@configclass
+class Dog03HIMPPOAlgorithmCfg(RslRlPpoAlgorithmCfg):
+    estimator_learning_rate = 1.0e-3
+    estimator_velocity_loss_coef = 1.0
+    estimator_swap_loss_coef = 0.1
+    estimator_substeps = 1
+    estimator_max_grad_norm = 10.0
+
+
+@configclass
+class Dog03Flat282HIMRunnerCfg(RslRlOnPolicyRunnerCfg):
+    class_name = "HIMOnPolicyRunner"
+    num_steps_per_env = 48
+    max_iterations = 1000
+    save_interval = 50
+    experiment_name = "dog03_flat_282"
+    policy = Dog03HIMActorCriticCfg(
+        init_noise_std=1.0,
+        actor_obs_normalization=False,
+        critic_obs_normalization=False,
+        actor_hidden_dims=[512, 256, 128],
+        critic_hidden_dims=[512, 256, 128],
+        activation="elu",
+    )
+    algorithm = Dog03HIMPPOAlgorithmCfg(
+        value_loss_coef=1.0,
+        use_clipped_value_loss=True,
+        clip_param=0.2,
+        entropy_coef=0.01,
+        num_learning_epochs=5,
+        num_mini_batches=4,
+        learning_rate=5.0e-4,
+        schedule="adaptive",
+        gamma=0.99,
+        lam=0.95,
+        desired_kl=0.01,
+        max_grad_norm=1.0,
+    )
 
 
 @configclass
 class Dog03Flat282DomainRandHIMRunnerCfg(Dog03Flat282HIMRunnerCfg):
     # Checkpoints are selected explicitly with --resume --checkpoint=... .
     load_optimizer: bool = False
+    seed = 1
 
     def __post_init__(self):
         super().__post_init__()
@@ -31,5 +102,5 @@ class Dog03Flat282DomainRandHIMRunnerCfg(Dog03Flat282HIMRunnerCfg):
 class Dog03Stairs282HIMRunnerCfg(Dog03Flat282DomainRandHIMRunnerCfg):
     def __post_init__(self):
         super().__post_init__()
-        self.max_iterations = stairs_config()["iterations"]
+        self.max_iterations = stairs_iterations()
         self.experiment_name = "dog03_stairs_282"

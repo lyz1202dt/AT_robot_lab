@@ -28,36 +28,91 @@ lowest foot mesh point is z=-0.3215 m. Initial base height remains 0.40 m
 limits are 30 Nm and action scale is 0.25. These are starting training
 parameters and need validation in simulation and tuning for the real robot.
 
-All five tasks use `ManagerBasedRLEnv`, inheriting CSDog1's common manager
-configurations, phase observations, rewards and PPO/HIM hyperparameters.
-The 47-D actor frame is phase (2), angular velocity (3), projected gravity (3),
+The registered task entry points match CSDog1's two training paths. All
+implementations are local copies under `dog03`; none import or inherit from
+`csdog1`. Shared Isaac Lab/RobotLab infrastructure and the HIM model remain in use.
+
+| Task suffix | Environment | Actor | Critic | Reward implementation |
+| --- | --- | --- | --- | --- |
+| Flat / Rough | Standard ManagerBasedRLEnv | 47 | 50 | `rewards.py`, `rewards_cfg.py` |
+| Flat-282 | Standard ManagerBasedRLEnv | 282 | 50 | `rewards.py`, `rewards_cfg.py` |
+| Flat-282-DomainRand | `cyberstar.lab.Dog03CyberstarEnv` | 282 | 491 | `cyberstar/core.py`, `cyberstar/config.json` |
+| Stairs-282 | `cyberstar.stairs_lab.Dog03CyberstarStairsEnv` | 282 | 491 | `cyberstar/core.py`, `cyberstar/stairs_core.py`, `cyberstar/stairs_config.json` |
+
+The directory layout follows CSDog1, including the full `cyberstar/` package:
+
+```text
+dog03/
+├── agents/                 # Local PPO, HIM and CUSRL configurations
+├── flat_env_cfg.py         # Standard flat stages
+├── rough_env_cfg.py
+├── observations.py
+├── rewards.py             # Standard-task formulas
+├── rewards_cfg.py         # Standard-task weights and parameters
+├── stairs_env_cfg.py       # Full Cyberstar stair environment configuration
+└── cyberstar/
+    ├── core.py            # Full robust-flat reward/command/history logic
+    ├── stairs_core.py     # Stair-specific commands and rewards
+    ├── runtime.py
+    ├── stairs_runtime.py  # DOG03_STAIR_STAGE and iteration selection
+    ├── lab.py             # Simulator adapter and Ji22 reward aggregation
+    ├── stairs_lab.py
+    ├── env_cfg.py
+    ├── asset.py           # Spawn 03dog URDF with its existing FOOT bodies
+    ├── config.json        # Robust-flat parameters and reward scales
+    ├── stairs_config.json # Stair parameters, reward scales and stages
+    ├── terrain.py
+    ├── stairs_terrain.py
+    ├── stairs_geometry.py
+    ├── math.py
+    ├── LICENSE
+    └── provenance.json
+```
+
+For independent reward editing, change `_reward_*` methods in the local
+`cyberstar/core.py` and `cyberstar/stairs_core.py`, and weights under
+`env.rewards.scales` in the corresponding JSON. Zero weights disable terms.
+Robust flat enables 78 reward terms plus termination; stairs enables 85 plus
+termination. The Ji22 aggregator combines positive and negative rewards before
+adding termination. Standard tasks continue to use local `rewards.py` and
+`rewards_cfg.py`. The manager-only domain-randomization class in `flat_env_cfg.py`
+is retained as in CSDog1; the registered DomainRand task uses `cyberstar/env_cfg.py`.
+
+The actor frame is phase (2), angular velocity (3), projected gravity (3),
 commands (3), joint offsets (12), joint velocities (12), previous actions (12).
-The 282-D actor uses six frames. The default HIM wrapper assembles these frames
-from oldest to latest, matching the shared export code. The critic is 50-D
-throughout these tasks, which allows flat-282 weights to continue into domain
-randomization and stairs. CSDog1's custom Cyberstar environment, 491-D critic,
-USD foot reconstruction and automatic checkpoint paths are specific to that
-robot and are not part of the 03dog tasks.
+HIM history contains six complete frames, oldest to latest. The full Cyberstar
+stages also preserve the 491-D privileged critic, command scale `[2, 2, 0.25]`,
+contact-dependent stopping, action delay, explicit PD and structured commands.
+Standard stages use command scale `[1, 1, 0.25]`.
 
-The model adapter sets URDF sensor paths, uses actual `*_FOOT` bodies for all
-foot rewards, adapts stance width/height targets, and terminates on base contact.
-Raw joint-angle mirror loss is disabled because the CAD joint zeros differ.
-Initial flat tasks retain material/push variation; the robustness and stairs
-tasks also enable mass, COM and PD-gain variation.
+Actor/critic hidden dimensions are `[512, 256, 128]` with ELU. HIM retains the
+`[128, 64, 16]` encoder, `[128, 64]` target encoder and 32 prototypes.
+The full Cyberstar critic starts with 491 inputs, matching the corresponding
+CSDog1 stages. Robot-specific posture and geometry are adapted to 03dog:
+0/-0.7854/0 joint angles, 0.40 m spawn height, 0.32 m height targets, URDF joint
+limits, FK-derived footholds, and about 0.373 m stance width. All four FOOT
+bodies, mesh collisions, masses and inertias come directly from the 03dog URDF;
+CSDog1's USD foot reconstruction is replaced by local URDF spawning.
 
-Task IDs and complete train/resume/play commands are in the **03dog 训练任务**
-section of the root `AT_DESCRIPE.md`. All logs use independent `dog03_*`
-directories. Continuation uses explicit 03dog checkpoint paths and the same
-training backend throughout the sequence.
+Start the new 491-D robust-flat task fresh, then continue its checkpoint into
+stairs using the same training backend. Old 50-D critic checkpoints (including
+standard Flat-282) cannot be loaded directly into the full Cyberstar tasks;
+the observation semantics also differ. No CSDog1 checkpoint is selected
+automatically. Training, resume and playback commands are in `AT_DESCRIPE.md`.
+Logs continue to use independent `dog03_*` directories.
+For a fresh robust-flat run, the documented command requests 2000 iterations
+to cover the copied recovery curriculum's 1200-1600 iteration window. The
+runner's default 1000 iterations remains the same as CSDog1's continuation budget.
 
-`DOG03_STAIR_STAGE=0...4` selects both stair height bands and the runner's default
-additional iterations; the default is stage 0. Stages are changed between runs.
-The robot shares CSDog1's terrain geometry implementation: 30% flat patches and
-70% stairs, with 65% ascent / 35% descent among stair patches. Each reset starts
-on the center platform with a random heading. Stages and budgets are configured
-locally in `stairs_config.json`, independently of `CSDOG1_STAIR_STAGE`.
+`DOG03_STAIR_STAGE=0...4` selects terrain height bands and additional iterations.
+The default is stage 0, independent of `CSDOG1_STAIR_STAGE`. The full local config
+is `cyberstar/stairs_config.json`. Geometry, stage distributions and budgets are
+copied from CSDog1; stage 4 uses 5-17 cm bands and 1500 iterations. Patches are
+30% flat and 70% stairs, with 65% ascent among stairs. Resets place the robot on
+the center platform near the stair edge, with a small heading perturbation.
+Stages are selected between runs.
 
-CPU checks:
+CPU checks (tensor runtime and a full-size HIM/PPO update, without physics):
 
 ```bash
 python3 -m unittest discover -s tests -p 'test_dog03*.py'

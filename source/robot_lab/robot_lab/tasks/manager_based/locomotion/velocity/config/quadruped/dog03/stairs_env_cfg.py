@@ -3,36 +3,36 @@
 
 from isaaclab.utils import configclass
 
-from ..csdog1.cyberstar.stairs_terrain import CyberstarStairPatchCfg, CyberstarStairsTerrainGeneratorCfg
-from .curriculum import stairs_config
-from .flat_env_cfg import Dog03Flat282DomainRandEnvCfg
+from .cyberstar.env_cfg import Dog03CyberstarDomainRandEnvCfg
+from .cyberstar.stairs_runtime import stairs_config
+from .cyberstar.stairs_terrain import CyberstarStairPatchCfg, CyberstarStairsTerrainGeneratorCfg
 
 
 @configclass
-class Dog03Stairs282EnvCfg(Dog03Flat282DomainRandEnvCfg):
-    """Blind stairs, keeping the same actor and critic as robust flat training."""
+class Dog03Stairs282EnvCfg(Dog03CyberstarDomainRandEnvCfg):
+    """Cyberstar blind stairs: 282-D actor history and unchanged 491-D critic."""
 
-    def _configure_task(self):
-        super()._configure_task()
-        stage = stairs_config()
+    cyberstar_config: dict = stairs_config()["env"]
+
+    def __post_init__(self):
+        super().__post_init__()
+        # Thousands of robots on stair triangle meshes exceed PhysX's default
+        # 64 MiB narrow-phase collision stack (about 78 MiB in the failing run).
+        self.sim.physx.gpu_collision_stack_size = max(self.sim.physx.gpu_collision_stack_size, 2**27)
+        terrain = self.cyberstar_config["terrain"]
         self.scene.terrain.terrain_generator = CyberstarStairsTerrainGeneratorCfg(
-            size=(8.0, 8.0),
-            border_width=25.0,
-            num_rows=16,
-            num_cols=16,
-            horizontal_scale=0.1,
-            vertical_scale=0.005,
-            slope_threshold=0.75,
+            size=(terrain["terrain_length"], terrain["terrain_width"]),
+            border_width=terrain["border_size"],
+            num_rows=terrain["num_rows"],
+            num_cols=terrain["num_cols"],
+            horizontal_scale=terrain["horizontal_scale"],
+            vertical_scale=terrain["vertical_scale"],
+            slope_threshold=terrain["slope_treshold"],
             use_cache=False,
             curriculum=False,
-            flat_ratio=0.30,
-            up_ratio=0.65,
-            height_bands=tuple(tuple(band) for band in stage["height_bands"]),
-            sub_terrains={"stairs": CyberstarStairPatchCfg(platform_size=3.0)},
+            flat_ratio=terrain["flat_terrain_ratio"],
+            up_ratio=terrain["stair_up_ratio"],
+            height_bands=tuple(tuple(band) for band in terrain["stair_height_bands"]),
+            sub_terrains={"stairs": CyberstarStairPatchCfg(platform_size=terrain["stair_platform_size"])},
         )
         self.scene.terrain.max_init_terrain_level = None
-        self.curriculum.terrain_levels = None
-        self.sim.physx.gpu_collision_stack_size = max(self.sim.physx.gpu_collision_stack_size, 2**27)
-        self.commands.base_velocity.ranges.lin_vel_x = (-0.4, 0.8)
-        self.commands.base_velocity.ranges.lin_vel_y = (-0.3, 0.3)
-        self.commands.base_velocity.ranges.ang_vel_z = (-0.5, 0.5)

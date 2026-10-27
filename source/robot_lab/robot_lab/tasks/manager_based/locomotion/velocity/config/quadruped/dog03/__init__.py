@@ -7,7 +7,6 @@ import gymnasium as gym
 
 from . import agents
 
-
 gym.register(
     id="RobotLab-Isaac-Velocity-Flat-03Dog-v0",
     entry_point="isaaclab.envs:ManagerBasedRLEnv",
@@ -34,10 +33,10 @@ gym.register(
 
 gym.register(
     id="RobotLab-Isaac-Velocity-Flat-03Dog-282-DomainRand-v0",
-    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    entry_point=f"{__name__}.cyberstar.lab:Dog03CyberstarEnv",
     disable_env_checker=True,
     kwargs={
-        "env_cfg_entry_point": f"{__name__}.flat_env_cfg:Dog03Flat282DomainRandEnvCfg",
+        "env_cfg_entry_point": f"{__name__}.cyberstar.env_cfg:Dog03CyberstarDomainRandEnvCfg",
         "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_him_cfg:Dog03Flat282DomainRandHIMRunnerCfg",
         "rsl_rl_ppo_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:Dog03Flat282DomainRandPPORunnerCfg",
         "rsl_rl_him_cfg_entry_point": f"{agents.__name__}.rsl_rl_him_cfg:Dog03Flat282DomainRandHIMRunnerCfg",
@@ -47,7 +46,7 @@ gym.register(
 
 gym.register(
     id="RobotLab-Isaac-Velocity-Stairs-03Dog-282-v0",
-    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    entry_point=f"{__name__}.cyberstar.stairs_lab:Dog03CyberstarStairsEnv",
     disable_env_checker=True,
     kwargs={
         "env_cfg_entry_point": f"{__name__}.stairs_env_cfg:Dog03Stairs282EnvCfg",

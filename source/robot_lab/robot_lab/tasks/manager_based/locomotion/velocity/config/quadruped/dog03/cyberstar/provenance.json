@@ -1,0 +1,40 @@
+{
+  "source": "Cyberstar_rl_train",
+  "files": {
+    "legged_gym/envs/base/legged_robot_config.py": "ec5a9dd39ed9e82bcc02d6f24911422b9ee2d86e20bc4d7bf04179ac56621298",
+    "legged_gym/envs/base/legged_robot.py": "67e76daddf6cbed04f3e7ac1d6030bbe5aec21a83854c23b71f399ccb15dab01",
+    "legged_gym/envs/csdog1/csdog1_flat_47_base.py": "a096d5bac2528a1cae5028b4c6ad7eb460ee40d43bdfd796cf4e69bfd299f3f7",
+    "legged_gym/envs/csdog1/csdog1_mixins.py": "030d57ba1fa8980a0926df6daae443859e4f3f2039cba9e86a65d298ce497c52",
+    "legged_gym/envs/csdog1/csdog1_flat_282_domain_rand.py": "153dee124aab99a7c023ecc2a0ea5ae662cbd4ece11d0feef8777fcc6ae4c59c",
+    "legged_gym/envs/csdog1/csdog1_stairs_282.py": "c270f35f1afa8a336d86597f2ad8ac657c769dcda1b13fa10f1faa26c9436401"
+  },
+  "migration": "Tensor formulas preserved; Isaac Gym state writes and terrain access replaced by Isaac Lab adapter.",
+  "local_copy": {
+    "source": "../csdog1/cyberstar",
+    "sha256": {
+      "LICENSE": "45ef98b334f4af6d4dd739f371cc5701197fa7393684ec038a48b65dafefcf56",
+      "stairs_geometry.py": "94c865deeea5f35ccca113c3c8c492c064ff49150285299cfe8667031f2f67dd",
+      "stairs_terrain.py": "f1c153bcbea9d178976f73343469e23bc349fc22d5e1ddd33d66f61053f4e219",
+      "lab.py": "0ad28cb13f7a748faa156f939a6325aa6a78d427c21542313013d77f0981d57a",
+      "terrain.py": "cd795ef18fc34845cb867ec88e8f667e22254a503d90c0c5e29f22b1fbc5c4bd",
+      "provenance.json": "a60f60283718c31310ad9c7f2cde45dddf240b559d1f86786dda3457f16a467a",
+      "__init__.py": "e9709a8f9b6b2721b70ffeac6163658fa98f5014b961cde642156106df9e048d",
+      "stairs_config.json": "1b369c304fef3d4b56ff51e34d9143a16338f5fec3e6e63a70920aad2aed9730",
+      "stairs_runtime.py": "3bc2c736624a1e4cd1c6571f43b3712b5753440e217af98cbcd942a5ec5d1053",
+      "env_cfg.py": "d1c2307966c1cbcb718a53fc95a21a355ae4029f19b0f19ac8fb4390ccdf7afc",
+      "runtime.py": "5a1b6829a3fa6766057983edb72e1e67a4f3cb25092a5fb83ee06fa6c2ae6eb6",
+      "core.py": "4c5dd762ce8f6fb99fd02b41cf5cc94539e3b4e418daec5c3502d8f45df6d929",
+      "stairs_core.py": "28a718758ea7c0a72cb232edbf0fddea6aacbb1913f594cfadf86e388b9883b9",
+      "config.json": "093cc3b0fc8376baab58a8cb4cc13d3e171dc893851e2ef75d32bb73fd13cee9",
+      "stairs_lab.py": "050562b4b41b069873b8e764a5aef99be1f64729e99f8da6598bed53a3634e5a",
+      "math.py": "f56a60526259e6ded4efbbab317fea0825b3d893e8261ea0a9d50751a6383596",
+      "asset.py": "e45d1c334513419c35d5e5a18c55a0a385d31f317a67ab9cb16843c7a4f1f2b8"
+    },
+    "adaptations": [
+      "Independent local classes, configs and DOG03_STAIR_STAGE",
+      "03dog URDF spawning; retain fixed FOOT bodies, mass and inertia",
+      "CAD reference angles, URDF joint limits/body indices, 0.40 m reset height",
+      "0.32 m height targets and FK-derived footholds and stance dimensions"
+    ]
+  }
+}

@@ -133,7 +133,7 @@ cd /workspace/isaaclab_extension_template
 | 1 | 3–5：30%；5–8：70% | 500 |
 | 2 | 3–5：10%；5–8：25%；8–12：65% | 800 |
 | 3 | 3–5：5%；5–8：10%；8–12：20%；12–16：65% | 1000 |
-| 4 | 3–5：5%；5–8：5%；8–12：10%；12–16：20%；15–20：60% | 1200 |
+| 4 | 5–8：5%；8–12：5%；12–15：20%；15–17：70% | 1500 |
 
 整体保留 30% 平地、70% 楼梯；楼梯内为 65% 上楼、35% 下楼。阶段不会自动升级。每阶段验证上楼、下楼、侧移和站立表现后，再执行下一阶段；选择通过率好的 checkpoint，不能仅按总奖励选择。
 
@@ -170,7 +170,7 @@ CSDOG1_STAIR_STAGE=3 /workspace/isaaclab/isaaclab.sh -p scripts/reinforcement_le
   --run_name=stairs_stage3 --resume \
   --checkpoint=/absolute/path/to/stage2_best.pt
 
-# Stage 4：最高 20 cm，追加 1200 轮。替换为 Stage 3 最好权重的绝对路径。
+# Stage 4：最高 17 cm，追加 1500 轮。替换为 Stage 3 最好权重的绝对路径。
 CSDOG1_STAIR_STAGE=4 /workspace/isaaclab/isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/train.py \
   --task=RobotLab-Isaac-Velocity-Stairs-CSDog1-282-v0 \
   --agent=rsl_rl_him_cfg_entry_point --num_envs=4096 --headless \
@@ -296,7 +296,9 @@ ldconfig
 
 ## 03dog 训练任务
 
-03dog 的 Python 配置目录为 `config/quadruped/dog03`，模型目录仍为 `data/Robots/03dog`。沿用 CSDog1 的通用观测、PPO/HIM 和奖励配置，按 03dog 的实际关节坐标、足端和尺寸适配。关节顺序为 FL、FR、RL、RR，每腿 hip/thigh/calf；左后足已统一为固定关节，共 12 个驱动关节。
+03dog 的 Python 配置目录为 `config/quadruped/dog03`，模型目录仍为 `data/Robots/03dog`。环境、奖励函数、观测、地形和 PPO/HIM 配置已复制到 dog03 本地，不再导入或继承 csdog1 任务；训练入口和网络结构保持与对应的 CSDog1 配置一致，包含完整 Cyberstar 运行逻辑和 491 维 Critic，并按 03dog 的实际关节坐标、足端和尺寸适配。关节顺序为 FL、FR、RL、RR，每腿 hip/thigh/calf；左后足已统一为固定关节，共 12 个驱动关节。
+
+独立修改奖励时，崎岖、47 维平地和标准 282 维平地使用 `dog03/rewards.py`、`dog03/rewards_cfg.py`。完整地域随机化和楼梯任务使用 `dog03/cyberstar/core.py` 中的 `_reward_*` 函数，楼梯额外使用 `cyberstar/stairs_core.py`；权重和参数分别位于 `cyberstar/config.json`、`cyberstar/stairs_config.json` 的 `env.rewards`，权重在 `scales` 下，设为 0 表示禁用。完整任务分别启用 78 / 85 个奖励项（另加终止项），并使用与 csdog1 一致的 Ji22 奖励聚合。网络配置位于 `dog03/agents/`：Actor/Critic 隐藏层均为 `[512, 256, 128]`、ELU；HIM 保留 47×6 输入、`[128, 64, 16]` 编码器、`[128, 64]` 目标编码器和 32 个原型。
 
 | 任务名称 | 用途 | 默认算法 | 日志目录（`logs/rsl_rl/` 下） |
 | --- | --- | --- | --- |
@@ -328,19 +330,20 @@ python3 scripts/tools/prepare_03dog_urdf.py
   --agent=rsl_rl_him_cfg_entry_point \
   --num_envs=4096 --max_iterations=1000 --headless
 
-# 地域随机化续训：替换为上述 03dog 282 维平地训练得到的实际权重路径
+# 完整地域随机化：491 维 Critic
 /workspace/isaaclab/isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/train.py \
   --task=RobotLab-Isaac-Velocity-Flat-03Dog-282-DomainRand-v0 \
   --agent=rsl_rl_him_cfg_entry_point \
-  --num_envs=4096 --max_iterations=1000 --headless \
-  --resume --checkpoint=/absolute/path/to/dog03_flat_282/model_1000.pt
+  --num_envs=4096 --max_iterations=2000 --headless
 ```
 
-每条训练命令单独执行。首次建议用 `--num_envs=32 --max_iterations=2` 检查模型、接触和关节动作，再扩大训练规模。03dog 全部任务采用标准 ManagerBasedRLEnv，Critic 均为 50 维；282 维平地、地域随机化和楼梯之间可使用同一训练后端续训。权重由命令显式指定。282 维任务也注册了 `rsl_rl_ppo_cfg_entry_point` 和 `cusrl_cfg_entry_point`，默认使用 HIM。
+每条训练命令单独执行。首次建议用 `--num_envs=32 --max_iterations=2` 检查模型、接触和关节动作，再扩大训练规模。03dog 与 csdog1 的任务入口逐一对应：崎岖、47 维平地和标准 282 维平地采用标准 ManagerBasedRLEnv、50 维 Critic；地域随机化和楼梯采用本地 `cyberstar/` 自定义环境、282 维 Actor 和 491 维 Critic。完整任务的命令缩放为 `[2, 2, 0.25]`，并包含接触相关的停止调整、动作延迟和显式 PD。原有 50 维 Critic 权重不能直接续训完整任务；先从头训练 491 维地域随机化，再使用其 03dog 权重续训楼梯。已有 491 维地域随机化任务可加 `--resume --checkpoint=/absolute/path/to/dog03_robust_flat_best.pt` 继续训练。权重由命令显式指定，不会自动加载 csdog1 权重。282 维任务也注册了 `rsl_rl_ppo_cfg_entry_point` 和 `cusrl_cfg_entry_point`，默认使用 HIM。
+
+完整地域随机化的恢复课程在累计第 1200–1600 轮联动；从头训练的示例显式使用 2000 轮以覆盖该区间。Runner 默认 1000 轮与 csdog1 的追加训练预算一致。
 
 ### 03dog 楼梯分阶段课程
 
-`DOG03_STAIR_STAGE=0…4` 同时选择高度分布和默认追加训练轮数，默认阶段为 0。配置文件为 `config/quadruped/dog03/stairs_config.json`，阶段在不同训练运行之间手动选择。整体为 30% 平地、70% 楼梯，楼梯内为 65% 上楼、35% 下楼。
+`DOG03_STAIR_STAGE=0…4` 同时选择高度分布和默认追加训练轮数，默认阶段为 0。配置文件为 `config/quadruped/dog03/cyberstar/stairs_config.json`，阶段在不同训练运行之间手动选择。整体为 30% 平地、70% 楼梯，楼梯内为 65% 上楼、35% 下楼。
 
 | 阶段 | 楼梯高度分布（高度 cm：比例） | 默认追加训练轮数 |
 | --- | --- | --- |
@@ -348,7 +351,7 @@ python3 scripts/tools/prepare_03dog_urdf.py
 | 1 | 3–5：30%；5–8：70% | 500 |
 | 2 | 3–5：10%；5–8：25%；8–12：65% | 800 |
 | 3 | 3–5：5%；5–8：10%；8–12：20%；12–16：65% | 1000 |
-| 4 | 3–5：5%；5–8：5%；8–12：10%；12–16：20%；15–20：60% | 1200 |
+| 4 | 5–8：5%；8–12：5%；12–15：20%；15–17：70% | 1500 |
 
 Stage 0 从已验证的 03dog 地域随机化权重开始；后续阶段使用前一阶段验证通过的权重。以下绝对路径需要替换为实际文件路径。
 
@@ -380,7 +383,7 @@ DOG03_STAIR_STAGE=3 /workspace/isaaclab/isaaclab.sh -p scripts/reinforcement_lea
   --agent=rsl_rl_him_cfg_entry_point --num_envs=4096 --headless \
   --run_name=stairs_stage3 --resume --checkpoint=/absolute/path/to/dog03_stage2_best.pt
 
-# Stage 4：最高 20 cm，追加 1200 轮
+# Stage 4：最高 17 cm，追加 1500 轮
 DOG03_STAIR_STAGE=4 /workspace/isaaclab/isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/train.py \
   --task=RobotLab-Isaac-Velocity-Stairs-03Dog-282-v0 \
   --agent=rsl_rl_him_cfg_entry_point --num_envs=4096 --headless \
