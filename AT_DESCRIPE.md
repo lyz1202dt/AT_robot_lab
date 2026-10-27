@@ -405,6 +405,12 @@ cd /workspace/isaaclab_extension_template
   --agent=rsl_rl_him_cfg_entry_point \
   --num_envs=10 --headless --checkpoint=/absolute/path/to/dog03_flat_282_best.pt
 
+# 282 维平地：HIM 回放并导出
+/workspace/isaaclab/isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/play.py \
+  --task=RobotLab-Isaac-Velocity-Flat-03Dog-282-v0 \
+  --agent=rsl_rl_him_cfg_entry_point \
+  --num_envs=10 --headless --checkpoint=/absolute/path/to/dog03_flat_282_best.pt
+
 # 楼梯 Stage 0：带界面回放并导出
 DOG03_STAIR_STAGE=0 /workspace/isaaclab/isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/play.py \
   --task=RobotLab-Isaac-Velocity-Stairs-03Dog-282-v0 \
