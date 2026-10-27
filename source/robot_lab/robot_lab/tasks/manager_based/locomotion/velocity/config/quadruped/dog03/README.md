@@ -28,14 +28,14 @@ lowest foot mesh point is z=-0.3215 m. Initial base height remains 0.40 m
 limits are 30 Nm and action scale is 0.25. These are starting training
 parameters and need validation in simulation and tuning for the real robot.
 
-The registered task entry points match CSDog1's two training paths. All
+The registered tasks use standard and full Cyberstar training paths. All
 implementations are local copies under `dog03`; none import or inherit from
 `csdog1`. Shared Isaac Lab/RobotLab infrastructure and the HIM model remain in use.
 
 | Task suffix | Environment | Actor | Critic | Reward implementation |
 | --- | --- | --- | --- | --- |
 | Flat / Rough | Standard ManagerBasedRLEnv | 47 | 50 | `rewards.py`, `rewards_cfg.py` |
-| Flat-282 | Standard ManagerBasedRLEnv | 282 | 50 | `rewards.py`, `rewards_cfg.py` |
+| Flat-282 | `cyberstar.lab.Dog03CyberstarEnv` (domain randomization off) | 282 | 491 | `cyberstar/core.py`, `cyberstar/config.json` |
 | Flat-282-DomainRand | `cyberstar.lab.Dog03CyberstarEnv` | 282 | 491 | `cyberstar/core.py`, `cyberstar/config.json` |
 | Stairs-282 | `cyberstar.stairs_lab.Dog03CyberstarStairsEnv` | 282 | 491 | `cyberstar/core.py`, `cyberstar/stairs_core.py`, `cyberstar/stairs_config.json` |
 
@@ -83,7 +83,10 @@ commands (3), joint offsets (12), joint velocities (12), previous actions (12).
 HIM history contains six complete frames, oldest to latest. The full Cyberstar
 stages also preserve the 491-D privileged critic, command scale `[2, 2, 0.25]`,
 contact-dependent stopping, action delay, explicit PD and structured commands.
-Standard stages use command scale `[1, 1, 0.25]`.
+Flat-282 uses the same full Cyberstar environment, rewards, terrain and command
+scale as DomainRand. Only its `domain_rand.randomize_*` flags and
+`domain_rand.push_robots` are disabled; observation noise and reset/command
+sampling remain enabled. Flat / Rough use command scale `[1, 1, 0.25]`.
 
 Actor/critic hidden dimensions are `[512, 256, 128]` with ELU. HIM retains the
 `[128, 64, 16]` encoder, `[128, 64]` target encoder and 32 prototypes.
@@ -94,9 +97,10 @@ limits, FK-derived footholds, and about 0.373 m stance width. All four FOOT
 bodies, mesh collisions, masses and inertias come directly from the 03dog URDF;
 CSDog1's USD foot reconstruction is replaced by local URDF spawning.
 
-Start the new 491-D robust-flat task fresh, then continue its checkpoint into
-stairs using the same training backend. Old 50-D critic checkpoints (including
-standard Flat-282) cannot be loaded directly into the full Cyberstar tasks;
+Train Flat-282, then continue its checkpoint into DomainRand or stairs using
+the same training backend. All three now share the 491-D critic architecture.
+Old 50-D critic checkpoints (including the previous standard Flat-282) cannot
+be loaded directly into these tasks;
 the observation semantics also differ. No CSDog1 checkpoint is selected
 automatically. Training, resume and playback commands are in `AT_DESCRIPE.md`.
 Logs continue to use independent `dog03_*` directories.

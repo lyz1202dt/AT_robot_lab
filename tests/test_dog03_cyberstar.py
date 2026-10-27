@@ -15,13 +15,67 @@ spec = importlib.util.spec_from_file_location(
 package = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = package
 spec.loader.exec_module(package)
-from dog03_cyberstar_tests.runtime import CyberstarRuntime
+from dog03_cyberstar_tests.runtime import CyberstarRuntime, flat_config, source_config
 
 
 class Dog03CyberstarTest(unittest.TestCase):
     def setUp(self):
         torch.manual_seed(7)
         self.runtime = CyberstarRuntime(16, "cpu")
+
+    def test_flat_config_preserves_network_contract_and_source(self):
+        config = flat_config()
+        original = source_config()["env"]
+        flags = [name for name in original["domain_rand"] if name.startswith("randomize_") or name == "push_robots"]
+        self.assertTrue(flags)
+        for name in flags:
+            self.assertFalse(config["domain_rand"][name])
+            self.assertTrue(original["domain_rand"][name])
+        expected = copy.deepcopy(original)
+        for name in flags:
+            expected["domain_rand"][name] = False
+        self.assertEqual(config, expected)
+        runtime = CyberstarRuntime(16, "cpu", config=config)
+        runtime.compute_observations()
+        self.assertEqual(runtime.obs_buf.shape, (16, 282))
+        self.assertEqual(runtime.privileged_obs_buf.shape, (16, 491))
+
+    def test_startup_respects_randomization_flags(self):
+        # Exercise the real simulator adapter method against a CPU PhysX view.
+        import ast
+        from types import SimpleNamespace
+
+        tree = ast.parse((PACKAGE / "lab.py").read_text())
+        cls = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "Dog03CyberstarEnv")
+        method = next(node for node in cls.body if isinstance(node, ast.FunctionDef) and node.name == "_randomize_startup")
+        namespace = {"torch": torch}
+        exec(compile(ast.Module(body=[method], type_ignores=[]), str(PACKAGE / "lab.py"), "exec"), namespace)
+        for enabled in (False, True):
+            runtime = CyberstarRuntime(16, "cpu", config=source_config()["env"] if enabled else flat_config())
+            masses = torch.ones(16, 1)
+            coms = torch.zeros(16, 1, 7)
+            materials = torch.ones(16, 1, 3)
+            view = SimpleNamespace(
+                get_masses=lambda: masses, get_coms=lambda: coms, get_material_properties=lambda: materials,
+                set_masses=lambda *args: None, set_coms=lambda *args: None,
+                set_material_properties=lambda *args: None,
+            )
+            env = SimpleNamespace(
+                cyberstar=runtime, num_envs=16, device="cpu",
+                scene={"robot": SimpleNamespace(root_physx_view=view, find_bodies=lambda name: ([0], [name]))},
+            )
+            namespace["_randomize_startup"](env)
+            if enabled:
+                self.assertGreater(runtime.critic_base_mass_offset.abs().sum().item(), 0)
+                self.assertGreater(runtime.critic_base_com_offset.abs().sum().item(), 0)
+                self.assertGreater((runtime.critic_friction - 1).abs().sum().item(), 0)
+            else:
+                torch.testing.assert_close(masses, torch.ones_like(masses))
+                torch.testing.assert_close(coms, torch.zeros_like(coms))
+                torch.testing.assert_close(materials[:, :, :2], torch.ones_like(materials[:, :, :2]))
+                torch.testing.assert_close(runtime.critic_base_mass_offset, torch.zeros(16, 1))
+                torch.testing.assert_close(runtime.critic_base_com_offset, torch.zeros(16, 3))
+                torch.testing.assert_close(runtime.critic_friction, torch.ones(16, 1))
 
     def test_history_reset_and_critic_layout(self):
         r = self.runtime

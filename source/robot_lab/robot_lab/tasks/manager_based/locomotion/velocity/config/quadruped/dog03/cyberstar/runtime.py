@@ -20,6 +20,15 @@ def source_config():
     return json.loads(Path(__file__).with_name("config.json").read_text())
 
 
+def flat_config():
+    """Use the robust-flat task with dynamics randomization and pushes disabled."""
+    config = source_config()["env"]
+    for name in config["domain_rand"]:
+        if name.startswith("randomize_") or name == "push_robots":
+            config["domain_rand"][name] = False
+    return config
+
+
 class CyberstarRuntime(Dog03Flat282DomainRandMixin, Dog03Flat282Mixin, Dog03Flat47Mixin, Dog03Flat47):
     """Own the original tensor state; simulator I/O is injected by the Lab adapter."""
 

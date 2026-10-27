@@ -113,6 +113,10 @@ class Dog03IndependenceTest(unittest.TestCase):
             }
             expected["id"] = task
             expected["kwargs"] = {key: value.replace("CSDog1", "Dog03") for key, value in entry["kwargs"].items()}
+            if task == "RobotLab-Isaac-Velocity-Flat-03Dog-282-v0":
+                package = "dog03_registry_cpu.cyberstar"
+                expected["entry_point"] = f"{package}.lab:Dog03CyberstarEnv"
+                expected["kwargs"]["env_cfg_entry_point"] = f"{package}.env_cfg:Dog03CyberstarFlatEnvCfg"
             self.assertEqual(local[task], expected)
 
     def test_copied_command_and_reward_formulas_match_csdog1(self):

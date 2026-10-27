@@ -249,10 +249,14 @@ class Dog03CyberstarEnv(ManagerBasedRLEnv):
         view = robot.root_physx_view
         masses, coms = view.get_masses(), view.get_coms()
         base = robot.find_bodies("base_link")[0][0]
-        mass = torch.empty(self.num_envs).uniform_(*runtime.cfg.domain_rand.added_mass_range)
+        dr = runtime.cfg.domain_rand
+        mass = (
+            torch.empty(self.num_envs).uniform_(*dr.added_mass_range)
+            if dr.randomize_base_mass else torch.zeros(self.num_envs)
+        )
         com = torch.stack(
             [
-                torch.empty(self.num_envs).uniform_(*limits)
+                torch.empty(self.num_envs).uniform_(*limits) if dr.randomize_com else torch.zeros(self.num_envs)
                 for limits in (
                     runtime.cfg.domain_rand.com_range_x,
                     runtime.cfg.domain_rand.com_range_y,
@@ -269,8 +273,11 @@ class Dog03CyberstarEnv(ManagerBasedRLEnv):
         runtime.critic_base_mass_offset[:] = mass[:, None].to(self.device)
         runtime.critic_base_com_offset[:] = com.to(self.device)
         # One coefficient per environment and all its collision shapes, as in source.
-        buckets = torch.empty(64).uniform_(*runtime.cfg.domain_rand.friction_range)
-        friction = buckets[torch.randint(0, 64, (self.num_envs,))]
+        if dr.randomize_friction:
+            buckets = torch.empty(64).uniform_(*dr.friction_range)
+            friction = buckets[torch.randint(0, 64, (self.num_envs,))]
+        else:
+            friction = torch.ones(self.num_envs)
         materials = view.get_material_properties()
         materials[:, :, :2] = friction[:, None, None]
         materials[:, :, 2] = 0

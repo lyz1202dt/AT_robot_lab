@@ -337,7 +337,7 @@ python3 scripts/tools/prepare_03dog_urdf.py
   --num_envs=4096 --max_iterations=2000 --headless
 ```
 
-每条训练命令单独执行。首次建议用 `--num_envs=32 --max_iterations=2` 检查模型、接触和关节动作，再扩大训练规模。03dog 与 csdog1 的任务入口逐一对应：崎岖、47 维平地和标准 282 维平地采用标准 ManagerBasedRLEnv、50 维 Critic；地域随机化和楼梯采用本地 `cyberstar/` 自定义环境、282 维 Actor 和 491 维 Critic。完整任务的命令缩放为 `[2, 2, 0.25]`，并包含接触相关的停止调整、动作延迟和显式 PD。原有 50 维 Critic 权重不能直接续训完整任务；先从头训练 491 维地域随机化，再使用其 03dog 权重续训楼梯。已有 491 维地域随机化任务可加 `--resume --checkpoint=/absolute/path/to/dog03_robust_flat_best.pt` 继续训练。权重由命令显式指定，不会自动加载 csdog1 权重。282 维任务也注册了 `rsl_rl_ppo_cfg_entry_point` 和 `cusrl_cfg_entry_point`，默认使用 HIM。
+每条训练命令单独执行。首次建议用 `--num_envs=32 --max_iterations=2` 检查模型、接触和关节动作，再扩大训练规模。03dog 与 csdog1 的任务入口逐一对应：崎岖和 47 维平地采用标准 ManagerBasedRLEnv、50 维 Critic；282 维平地、地域随机化和楼梯采用本地 `cyberstar/` 自定义环境、282 维 Actor 和 491 维 Critic。282 维平地直接复用地域随机化环境，仅关闭 `domain_rand.randomize_*` 和 `push_robots`；地形、奖励、观测噪声、重置和命令采样保持一致。完整任务的命令缩放为 `[2, 2, 0.25]`，并包含接触相关的停止调整、动作延迟和显式 PD。原有 50 维 Critic 权重不能直接续训完整任务；可先从头训练 491 维基础平地，再使用其 03dog 权重续训地域随机化或楼梯；旧版 50 维基础平地检查点需重新训练。已有 491 维地域随机化任务可加 `--resume --checkpoint=/absolute/path/to/dog03_robust_flat_best.pt` 继续训练。权重由命令显式指定，不会自动加载 csdog1 权重。282 维任务也注册了 `rsl_rl_ppo_cfg_entry_point` 和 `cusrl_cfg_entry_point`，默认使用 HIM。
 
 完整地域随机化的恢复课程在累计第 1200–1600 轮联动；从头训练的示例显式使用 2000 轮以覆盖该区间。Runner 默认 1000 轮与 csdog1 的追加训练预算一致。
 

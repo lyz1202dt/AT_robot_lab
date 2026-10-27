@@ -10,7 +10,7 @@ from isaaclab.utils import configclass
 from ..flat_env_cfg import Dog03Flat282EnvCfg
 from . import lab
 from .asset import spawn_dog03
-from .runtime import source_config
+from .runtime import flat_config, source_config
 from .terrain import CyberstarDiscreteTerrainCfg
 
 
@@ -115,3 +115,10 @@ class Dog03CyberstarDomainRandEnvCfg(Dog03Flat282EnvCfg):
             for name, weight in self.cyberstar_config["rewards"]["scales"].items()
             if weight
         }
+
+
+@configclass
+class Dog03CyberstarFlatEnvCfg(Dog03CyberstarDomainRandEnvCfg):
+    """Identical Cyberstar observations/rewards, without domain randomization."""
+
+    cyberstar_config: dict = flat_config()
