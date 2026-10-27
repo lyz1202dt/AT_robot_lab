@@ -277,7 +277,10 @@ cmd_build() {
     else
         echo "[INFO] Build proxy: ${CLASH_PROXY_SCHEME_ARG}://${CLASH_PROXY_BUILD_HOST_ARG}:${CLASH_PROXY_PORT_ARG}"
     fi
-    run_compose build "${SERVICE_NAME}"
+    # Compose's Bake integration does not forward host-network permission.
+    # Keep Compose's resolved build settings and explicitly grant it to Bake.
+    run_compose build --print "${SERVICE_NAME}" | \
+        docker buildx bake --file - --allow=network.host --load "${SERVICE_NAME}"
 }
 
 cmd_start() {
@@ -296,7 +299,10 @@ cmd_start() {
     else
         echo "[INFO] Runtime proxy: ${HTTP_PROXY}"
     fi
-    run_compose up -d "${SERVICE_NAME}"
+    if ! docker image inspect "${SERVICE_NAME}" >/dev/null 2>&1; then
+        cmd_build
+    fi
+    run_compose up -d --no-build --pull never "${SERVICE_NAME}"
     if wait_for_container_running; then
         echo "[INFO] Container '${CONTAINER_NAME}' is ready."
     else
