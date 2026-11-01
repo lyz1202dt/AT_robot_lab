@@ -25,6 +25,10 @@ export https_proxy=192.168.2.180:7890
 
 ## 创建环境：
 
+`docker/.env.base` 默认使用本机 `isaac-lab-base` 镜像，对应 `/home/lyz/Project/IsaacLab` 的基础容器。该镜像应已完成 IsaacLab 依赖安装；本项目复用它的依赖，不再执行全量 `isaaclab.sh --install`。仅当核心包无法定位时，以 `--no-deps --no-build-isolation` 补充本地可编辑安装。
+
+若构建日志出现 `ModuleNotFoundError: No module named 'pip._vendor.packaging._structures'`，这是 pip 自身无法启动，不只是前面的依赖冲突警告。更新本项目 Dockerfile 后重新执行以下构建命令；若错误在最初的 `pip --version` 检查就出现，则基础镜像内的 pip 已损坏，需要先修复或重建基础镜像。
+
 ```bash
 docker/container.sh build
 docker/container.sh start
