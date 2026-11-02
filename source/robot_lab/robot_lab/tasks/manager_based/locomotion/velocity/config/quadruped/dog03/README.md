@@ -88,6 +88,29 @@ scale as DomainRand. Only its `domain_rand.randomize_*` flags and
 `domain_rand.push_robots` are disabled; observation noise and reset/command
 sampling remain enabled. Flat / Rough use command scale `[1, 1, 0.25]`.
 
+### Domain randomization parity with ATDog
+
+The 282-D DomainRand and stairs stages already include link/base mass, inertia,
+COM, joint zero offsets, motor strength, PD gains, control delay, static friction,
+observation noise, reset joint/root velocity sampling and periodic pushes.
+The following ATDog randomizations are also implemented in the Cyberstar adapter:
+
+| Addition | Range | Sampling |
+| --- | --- | --- |
+| Independent dynamic friction | 0.3–0.8 (static friction keeps its existing range) | Startup, 64 buckets |
+| Restitution | 0–0.5 | Startup, 64 buckets |
+| Base external force / torque | Each axis ±10 N / ±10 N·m, local body frame | Reset, held until the next reset (same as ATDog) |
+| Reset height / roll / pitch / yaw | 0–0.02 m / ±0.05 / ±0.05 / ±0.1 rad | Reset, composed with the existing spawn pose |
+
+Stairs retain their existing randomized spawn yaw and heading reference; only
+height, roll and pitch are added there. Existing XY placement, reset velocities,
+PD/mass ranges and push scheduling remain unchanged rather than copying stronger
+ATDog settings onto a different robot. Each addition has a separate
+`domain_rand.randomize_*` switch in `cyberstar/config.json` and
+`cyberstar/stairs_config.json`. Flat-282 disables all these switches; playback
+(`cyberstar_play`) skips the added randomizations and clears external wrenches.
+Actor and critic dimensions, observation ordering and HIM network sizes are unchanged.
+
 Actor/critic hidden dimensions are `[512, 256, 128]` with ELU. HIM retains the
 `[128, 64, 16]` encoder, `[128, 64]` target encoder and 32 prototypes.
 The full Cyberstar critic starts with 491 inputs, matching the corresponding

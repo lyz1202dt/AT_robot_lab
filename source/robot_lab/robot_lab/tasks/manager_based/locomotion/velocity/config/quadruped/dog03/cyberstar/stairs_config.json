@@ -383,6 +383,20 @@
       }
     },
     "domain_rand": {
+      "randomize_dynamic_friction": true,
+      "dynamic_friction_range": [0.3, 0.8],
+      "randomize_restitution": true,
+      "restitution_range": [0.0, 0.5],
+      "randomize_external_force_torque": true,
+      "external_force_range": [-10.0, 10.0],
+      "external_torque_range": [-10.0, 10.0],
+      "randomize_reset_pose": true,
+      "reset_pose_range": {
+        "z": [0.0, 0.02],
+        "roll": [-0.05, 0.05],
+        "pitch": [-0.05, 0.05],
+        "yaw": [0.0, 0.0]
+      },
       "randomize_link_mass": true,
       "link_mass_scale_range": [0.9, 1.1],
       "randomize_link_inertia": true,

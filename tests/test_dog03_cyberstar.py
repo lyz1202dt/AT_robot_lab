@@ -101,14 +101,98 @@ class Dog03CyberstarTest(unittest.TestCase):
                 self.assertGreater(runtime.critic_base_mass_offset.abs().sum().item(), 0)
                 self.assertGreater(runtime.critic_base_com_offset.abs().sum().item(), 0)
                 self.assertGreater((runtime.critic_friction - 1).abs().sum().item(), 0)
+                torch.testing.assert_close(materials[:, 0, 0], runtime.critic_friction[:, 0])
+                self.assertTrue((materials[:, :, 1] >= 0.3).all())
+                self.assertTrue((materials[:, :, 1] <= 0.8).all())
+                self.assertFalse(torch.equal(materials[:, :, 0], materials[:, :, 1]))
+                self.assertTrue((materials[:, :, 2] >= 0).all())
+                self.assertTrue((materials[:, :, 2] <= 0.5).all())
+                self.assertGreater(materials[:, :, 2].sum().item(), 0)
             else:
                 torch.testing.assert_close(masses, torch.ones_like(masses))
                 torch.testing.assert_close(coms, torch.zeros_like(coms))
                 torch.testing.assert_close(materials[:, :, :2], torch.ones_like(materials[:, :, :2]))
+                self.assertEqual(materials[:, :, 2].sum().item(), 0)
                 torch.testing.assert_close(inertias, torch.eye(3).reshape(1, 1, 9).repeat(16, 5, 1))
                 torch.testing.assert_close(runtime.critic_base_mass_offset, torch.zeros(16, 1))
                 torch.testing.assert_close(runtime.critic_base_com_offset, torch.zeros(16, 3))
                 torch.testing.assert_close(runtime.critic_friction, torch.ones(16, 1))
+
+    def test_reset_pose_and_wrench_flags_and_partial_reset(self):
+        import ast
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+
+        tree = ast.parse((PACKAGE / "lab.py").read_text())
+        method = next(node for node in tree.body if isinstance(node, ast.FunctionDef)
+                      and node.name == "randomize_reset_pose_and_wrench")
+        ids = torch.tensor([1, 4, 7])
+        rotation = torch.tensor([[0.99, 0.02, 0.03, 0.04]]).repeat(len(ids), 1)
+        from_euler = Mock(return_value=rotation)
+        multiply = Mock(return_value=rotation)
+        namespace = {"torch": torch, "quat_from_euler_xyz": from_euler, "quat_mul": multiply}
+        exec(compile(ast.Module(body=[method], type_ignores=[]), str(PACKAGE / "lab.py"), "exec"), namespace)
+        for pose_enabled, wrench_enabled, test_mode, legacy in (
+            (True, True, False, False), (True, True, False, True),
+            (False, False, False, False), (True, True, True, False),
+            (False, True, False, False), (True, False, False, False),
+        ):
+            with self.subTest(pose=pose_enabled, wrench=wrench_enabled, test_mode=test_mode, legacy=legacy):
+                runtime = CyberstarRuntime(16, "cpu")
+                runtime.cfg.domain_rand.randomize_reset_pose = pose_enabled
+                runtime.cfg.domain_rand.randomize_external_force_torque = wrench_enabled
+                runtime.cfg.env.test = test_mode
+                setter = Mock()
+                robot = SimpleNamespace(find_bodies=lambda name: ([2], [name]))
+                if legacy:
+                    robot.set_external_force_and_torque = setter
+                else:
+                    robot.permanent_wrench_composer = SimpleNamespace(set_forces_and_torques=setter)
+                env = SimpleNamespace(cyberstar=runtime, device="cpu", scene={"robot": robot})
+                state = torch.zeros(len(ids), 13)
+                state[:, 2] = 0.4
+                state[:, 3] = 1
+                original = state.clone()
+                from_euler.reset_mock()
+                multiply.reset_mock()
+                namespace["randomize_reset_pose_and_wrench"](env, state, ids)
+                setter.assert_called_once()
+                args, kwargs = setter.call_args
+                forces, torques = args if legacy else (kwargs["forces"], kwargs["torques"])
+                self.assertEqual(forces.shape, (3, 1, 3))
+                self.assertEqual(kwargs["body_ids"], [2])
+                torch.testing.assert_close(kwargs["env_ids"], ids)
+                if pose_enabled and not test_mode:
+                    self.assertTrue((state[:, 2] >= 0.4).all())
+                    self.assertTrue((state[:, 2] <= 0.42).all())
+                    from_euler.assert_called_once()
+                    multiply.assert_called_once()
+                    for axis, limit in zip(from_euler.call_args.args, (0.05, 0.05, 0.1)):
+                        self.assertTrue((axis.abs() <= limit).all())
+                    torch.testing.assert_close(state[:, 3:7], rotation)
+                else:
+                    torch.testing.assert_close(state, original)
+                    from_euler.assert_not_called()
+                    multiply.assert_not_called()
+                if wrench_enabled and not test_mode:
+                    self.assertTrue((forces.abs() <= 10).all())
+                    self.assertTrue((torques.abs() <= 10).all())
+                    self.assertGreater(forces.abs().sum().item(), 0)
+                    self.assertGreater(torques.abs().sum().item(), 0)
+                else:
+                    self.assertEqual(forces.abs().sum().item(), 0)
+                    self.assertEqual(torques.abs().sum().item(), 0)
+
+    def test_stairs_added_randomization_preserves_heading(self):
+        import json
+
+        stairs = json.loads((PACKAGE / "stairs_config.json").read_text())["env"]["domain_rand"]
+        flat = source_config()["env"]["domain_rand"]
+        for name in ("randomize_dynamic_friction", "dynamic_friction_range", "randomize_restitution",
+                     "restitution_range", "randomize_external_force_torque", "external_force_range",
+                     "external_torque_range", "randomize_reset_pose"):
+            self.assertEqual(stairs[name], flat[name])
+        self.assertEqual(stairs["reset_pose_range"]["yaw"], [0.0, 0.0])
 
     def test_history_reset_and_critic_layout(self):
         r = self.runtime

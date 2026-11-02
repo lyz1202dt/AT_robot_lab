@@ -7,7 +7,7 @@ import torch
 from isaaclab.envs import ManagerBasedRLEnv
 from isaaclab.envs.mdp.actions import JointPositionAction
 from isaaclab.managers import CommandTerm, RewardManager
-from isaaclab.utils.math import euler_xyz_from_quat
+from isaaclab.utils.math import euler_xyz_from_quat, quat_from_euler_xyz, quat_mul
 from isaaclab.utils.warp import raycast_mesh
 
 from .runtime import CyberstarRuntime
@@ -122,6 +122,32 @@ def source_timeout(env):
     return env.episode_length_buf > env.max_episode_length
 
 
+def randomize_reset_pose_and_wrench(env, state, ids):
+    runtime, robot = env.cyberstar, env.scene["robot"]
+    config = runtime.cfg.domain_rand
+    enabled = not runtime.cfg.env.test
+    if enabled and getattr(config, "randomize_reset_pose", False):
+        limits = config.reset_pose_range
+        state[:, 2] += torch.empty(len(ids), device=env.device).uniform_(*limits.z)
+        angles = [
+            torch.empty(len(ids), device=env.device).uniform_(*getattr(limits, axis))
+            for axis in ("roll", "pitch", "yaw")
+        ]
+        state[:, 3:7] = quat_mul(state[:, 3:7], quat_from_euler_xyz(*angles))
+    forces = torch.zeros(len(ids), 1, 3, device=env.device)
+    torques = torch.zeros_like(forces)
+    if enabled and getattr(config, "randomize_external_force_torque", False):
+        forces.uniform_(*config.external_force_range)
+        torques.uniform_(*config.external_torque_range)
+    body_ids = robot.find_bodies("base_link")[0]
+    if hasattr(robot, "permanent_wrench_composer"):
+        robot.permanent_wrench_composer.set_forces_and_torques(
+            forces=forces, torques=torques, body_ids=body_ids, env_ids=ids,
+        )
+    else:
+        robot.set_external_force_and_torque(forces, torques, body_ids=body_ids, env_ids=ids)
+
+
 def reset_robot(env, env_ids):
     ids = torch.arange(env.num_envs, device=env.device) if env_ids is None else env_ids
     runtime, robot = env.cyberstar, env.scene["robot"]
@@ -131,6 +157,7 @@ def reset_robot(env, env_ids):
     state[:, :2] += torch.empty(count, 2, device=env.device).uniform_(-1, 1)
     if hasattr(env, "_place_stair_reset"):
         env._place_stair_reset(state, ids)
+    randomize_reset_pose_and_wrench(env, state, ids)
     # Source resets use the initial quaternion, with mild 6-D velocity variation.
     velocity_limit = runtime.cfg.init_state.reset_root_velocity_range
     state[:, 7:13] = (
@@ -304,7 +331,14 @@ class Dog03CyberstarEnv(ManagerBasedRLEnv):
             friction = torch.ones(self.num_envs)
         materials = view.get_material_properties()
         materials[:, :, :2] = friction[:, None, None]
-        materials[:, :, 2] = 0
+        if getattr(dr, "randomize_dynamic_friction", False):
+            buckets = torch.empty(64).uniform_(*dr.dynamic_friction_range)
+            materials[:, :, 1] = buckets[torch.randint(0, 64, (self.num_envs,))][:, None]
+        if getattr(dr, "randomize_restitution", False):
+            buckets = torch.empty(64).uniform_(*dr.restitution_range)
+            materials[:, :, 2] = buckets[torch.randint(0, 64, (self.num_envs,))][:, None]
+        else:
+            materials[:, :, 2] = 0
         view.set_material_properties(materials, ids)
         runtime.critic_friction[:] = friction[:, None].to(self.device)
 
