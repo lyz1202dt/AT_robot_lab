@@ -119,8 +119,39 @@ class Dog03IndependenceTest(unittest.TestCase):
                 expected["kwargs"]["env_cfg_entry_point"] = f"{package}.env_cfg:Dog03CyberstarFlatEnvCfg"
             self.assertEqual(local[task], expected)
 
-    def test_copied_command_and_reward_formulas_match_csdog1(self):
+    def test_retained_command_and_reward_formulas_match_csdog1(self):
         class Normalize(ast.NodeTransformer):
+            def visit_Assign(self, node):
+                if ast.unparse(node.targets[0]) == "push_base_height":
+                    return None
+                value = node.value.slice if isinstance(node.value, ast.Subscript) else node.value
+                if isinstance(value, ast.Call) and isinstance(value.func, ast.Attribute):
+                    if value.func.attr == "_scheduled_push_env_ids":
+                        if ast.unparse(node.targets[0]) == "env_ids":
+                            node.value = ast.parse(
+                                "((self.episode_length_buf > 0) & (self.episode_length_buf % interval == 0))"
+                                ".nonzero(as_tuple=False).flatten()", mode="eval"
+                            ).body
+                        else:
+                            node.value = ast.parse(
+                                "env_ids[(self.episode_length_buf[env_ids] > 0) & "
+                                "(self.episode_length_buf[env_ids] % interval == 0)]", mode="eval"
+                            ).body
+                return self.generic_visit(node)
+
+            def visit_Name(self, node):
+                if node.id == "push_base_height":
+                    return ast.parse("root_state[:, 2]", mode="eval").body
+                return node
+
+            def visit_AugAssign(self, node):
+                if ast.unparse(node.target) == "stair_quality" and any(
+                    isinstance(child, ast.Attribute) and child.attr == "stair_clearance_progress_floor"
+                    for child in ast.walk(node.value)
+                ):
+                    node.value = ast.parse("self._stair_progress_gate()", mode="eval").body
+                return self.generic_visit(node)
+
             def visit_Return(self, node):
                 if isinstance(node.value, ast.Constant) and node.value.value is None:
                     node.value = None

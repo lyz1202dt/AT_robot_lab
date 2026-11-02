@@ -93,8 +93,9 @@ class Dog03CyberstarTest(unittest.TestCase):
                 self.assertTrue((coms[:, 1:, :3].abs() <= 0.005).all())
                 self.assertGreater(coms[:, 1:, :3].abs().sum().item(), 0)
                 eigenvalues = torch.linalg.eigvalsh(inertias.reshape(16, 5, 3, 3))
-                self.assertTrue((eigenvalues >= 0.9).all())
-                self.assertTrue((eigenvalues <= 1.1).all())
+                relative_eigenvalues = eigenvalues / masses.unsqueeze(-1)
+                self.assertTrue((relative_eigenvalues >= 0.9).all())
+                self.assertTrue((relative_eigenvalues <= 1.1).all())
                 self.assertGreater((eigenvalues - 1).abs().sum().item(), 0)
                 torch.testing.assert_close(runtime.critic_base_mass_offset[:, 0], masses[:, 0] - 1)
                 torch.testing.assert_close(runtime.critic_base_com_offset, coms[:, 0, :3])
@@ -104,6 +105,7 @@ class Dog03CyberstarTest(unittest.TestCase):
                 torch.testing.assert_close(materials[:, 0, 0], runtime.critic_friction[:, 0])
                 self.assertTrue((materials[:, :, 1] >= 0.3).all())
                 self.assertTrue((materials[:, :, 1] <= 0.8).all())
+                self.assertTrue((materials[:, :, 1] <= materials[:, :, 0]).all())
                 self.assertFalse(torch.equal(materials[:, :, 0], materials[:, :, 1]))
                 self.assertTrue((materials[:, :, 2] >= 0).all())
                 self.assertTrue((materials[:, :, 2] <= 0.5).all())
@@ -288,7 +290,7 @@ class Dog03CyberstarTest(unittest.TestCase):
 
     def test_push_curriculum_and_capture_activation(self):
         r = self.runtime
-        r.episode_length_buf[:] = 500
+        r.episode_length_buf[:] = r.next_push_steps
         calls = []
         r._velocity_writer = lambda ids: calls.append(ids.clone())
         r.ppo_iteration = 1000
@@ -485,6 +487,33 @@ class Dog03ModelAndStairsTest(unittest.TestCase):
         self.assertEqual(runtime.stair_success, 1.0)
         self.assertFalse(runtime.stair_touchdown_event[8:10].any())
         self.assertTrue(runtime.stair_touchdown_event[10:].all())
+
+    def test_stair_clearance_keeps_learning_signal_when_blocked(self):
+        from dog03_cyberstar_tests.stairs_runtime import CyberstarStairsRuntime
+
+        for progress_floor in (0.0, 0.35, 0.6):
+            with self.subTest(progress_floor=progress_floor):
+                runtime = CyberstarStairsRuntime(8, "cpu")
+                runtime.cfg.rewards.stair_clearance_progress_floor = progress_floor
+                runtime.flat_env_mask[2:] = False
+                runtime.stair_step_heights[2:] = 0.05
+                runtime.commands[:] = 0
+                runtime.command_targets[:] = 0
+                runtime.commands[:, 0] = 0.5
+                runtime.command_targets[:, 0] = 0.5
+                target = (runtime.stair_step_heights.abs() + runtime.cfg.rewards.clearance_margin).clamp(
+                    runtime.cfg.rewards.clearance_target_min, runtime.cfg.rewards.clearance_target_max
+                )
+                runtime.rigid_body_states[:, runtime.feet_indices, 2] = target[:, None]
+                runtime.contact_forces[:] = 0
+                blocked = runtime._reward_feet_clearance()
+                torch.testing.assert_close(blocked[2:], torch.full((6,), progress_floor))
+                runtime.base_lin_vel[:, 0] = 0.5
+                moving = runtime._reward_feet_clearance()
+                self.assertTrue((moving[2:] > blocked[2:]).all())
+                runtime.commands[:] = 0
+                runtime.command_targets[:] = 0
+                self.assertEqual(runtime._reward_feet_clearance().count_nonzero(), 0)
 
     def test_full_size_him_ppo_update_on_03dog_stairs(self):
         import math

@@ -164,7 +164,10 @@ class Dog03Stairs282Mixin:
         airborne_count = torch.sum(in_air, dim=1)
         stair_quality = torch.sum(quality * in_air.float(), dim=1) / airborne_count.clamp_min(1)
         stair_quality *= (airborne_count > 0).float()
-        stair_quality *= self._stair_progress_gate()
+        stair_quality *= (
+            self._stair_progress_gate().clamp_min(self.cfg.rewards.stair_clearance_progress_floor)
+            * self._stair_motion_mask().float()
+        )
         return flat_quality * self.flat_env_mask.float() + stair_quality
 
     def _reward_feet_air_time(self):

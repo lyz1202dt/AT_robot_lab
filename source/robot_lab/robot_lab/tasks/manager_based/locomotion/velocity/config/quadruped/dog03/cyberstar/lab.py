@@ -66,12 +66,7 @@ class CyberstarJointAction(JointPositionAction):
         runtime = self._env.cyberstar
         q = self._asset.data.joint_pos[:, self._joint_ids]
         dq = self._asset.data.joint_vel[:, self._joint_ids]
-        torque = (
-            30 * runtime.kp_scales * (self.processed_actions + runtime.default_joint_angle_offsets - q)
-            - runtime.kd_scales * dq
-        ) * runtime.motor_strengths
-        limits = self._asset.data.joint_effort_limits[:, self._joint_ids]
-        runtime.torques[:] = torch.clamp(torque, -limits, limits)
+        runtime.compute_motor_torques(self.processed_actions, q, dq, runtime.torque_limits)
         self._asset.set_joint_effort_target(runtime.torques, joint_ids=self._joint_ids)
 
 
@@ -142,7 +137,10 @@ def randomize_reset_pose_and_wrench(env, state, ids):
     body_ids = robot.find_bodies("base_link")[0]
     if hasattr(robot, "permanent_wrench_composer"):
         robot.permanent_wrench_composer.set_forces_and_torques(
-            forces=forces, torques=torques, body_ids=body_ids, env_ids=ids,
+            forces=forces,
+            torques=torques,
+            body_ids=body_ids,
+            env_ids=ids,
         )
     else:
         robot.set_external_force_and_torque(forces, torques, body_ids=body_ids, env_ids=ids)
@@ -170,9 +168,17 @@ def reset_robot(env, env_ids):
     q[:, env._joint_ids] += runtime.default_joint_angle_offsets[ids]
     if not runtime.cfg.env.test:
         q *= torch.empty_like(q).uniform_(*runtime.cfg.init_state.reset_dof_scale_range)
+    joint_velocity = torch.zeros_like(q)
+    if not runtime.cfg.env.test:
+        joint_velocity.uniform_(*getattr(runtime.cfg.init_state, "reset_dof_velocity_range", (0.0, 0.0)))
     robot.write_root_pose_to_sim(state[:, :7], env_ids=ids)
     robot.write_root_velocity_to_sim(state[:, 7:13], env_ids=ids)
-    robot.write_joint_state_to_sim(q, torch.zeros_like(q), env_ids=ids)
+    robot.write_joint_state_to_sim(q, joint_velocity, env_ids=ids)
+    runtime.randomize_joint_friction(ids)
+    for actuator in robot.actuators.values():
+        indices = [runtime.dof_names.index(name) for name in actuator.joint_names]
+        actuator.coulomb_friction[ids] = runtime.joint_coulomb_friction[ids][:, indices]
+        actuator.joint_viscous_friction[ids] = runtime.joint_viscous_friction[ids][:, indices]
     dr = runtime.cfg.domain_rand
     for name, enabled, limits in (
         ("motor_strengths", dr.randomize_motor_strength, dr.motor_strength_range),
@@ -202,6 +208,10 @@ class Dog03CyberstarEnv(ManagerBasedRLEnv):
         self._cyberstar_obs_step = -1
         robot = self.scene["robot"]
         self._joint_ids, _ = robot.find_joints(self.cyberstar.dof_names, preserve_order=True)
+        self.cyberstar.torque_limits = torch.zeros_like(self.cyberstar.torques)
+        for actuator in robot.actuators.values():
+            indices = [self.cyberstar.dof_names.index(name) for name in actuator.joint_names]
+            self.cyberstar.torque_limits[:, indices] = actuator.effort_limit
         self._foot_ids, _ = robot.find_bodies([f"{leg}_FOOT" for leg in ("FL", "FR", "RL", "RR")], preserve_order=True)
         sensor = self.scene["contact_forces"]
         self._sensor_ids, _ = sensor.find_bodies(robot.body_names, preserve_order=True)
@@ -280,19 +290,25 @@ class Dog03CyberstarEnv(ManagerBasedRLEnv):
         masses, coms = view.get_masses(), view.get_coms()
         base = robot.find_bodies("base_link")[0][0]
         dr = runtime.cfg.domain_rand
+        nominal_masses = masses.clone()
         nominal_base_mass = masses[:, base].clone()
         nominal_base_com = coms[:, base, :3].clone()
         if getattr(dr, "randomize_link_mass", False):
             lower, upper = dr.link_mass_scale_range
             if not 0 < lower <= upper:
                 raise ValueError("link_mass_scale_range must be positive and ordered")
-            masses *= torch.empty_like(masses).uniform_(lower, upper)
+            scales = torch.empty_like(masses).uniform_(lower, upper)
+            scales[:, base] = 1.0
+            masses *= scales
         if getattr(dr, "randomize_link_com", False):
             for axis, name in enumerate(("x", "y", "z")):
-                coms[:, :, axis] += torch.empty_like(masses).uniform_(*getattr(dr.link_com_range, name))
+                offsets = torch.empty_like(masses).uniform_(*getattr(dr.link_com_range, name))
+                offsets[:, base] = 0.0
+                coms[:, :, axis] += offsets
         mass = (
             torch.empty(self.num_envs).uniform_(*dr.added_mass_range)
-            if dr.randomize_base_mass else torch.zeros(self.num_envs)
+            if dr.randomize_base_mass
+            else torch.zeros(self.num_envs)
         )
         com = torch.stack(
             [
@@ -313,12 +329,15 @@ class Dog03CyberstarEnv(ManagerBasedRLEnv):
         coms[:, base, :3] += com
         ids = torch.arange(self.num_envs, dtype=torch.int32)
         view.set_masses(masses, ids)
-        if getattr(dr, "randomize_link_inertia", False):
-            lower, upper = dr.link_inertia_scale_range
-            if not 0 < lower <= upper:
-                raise ValueError("link_inertia_scale_range must be positive and ordered")
+        if getattr(dr, "recompute_inertia", True) or getattr(dr, "randomize_link_inertia", False):
             inertias = view.get_inertias()
-            inertias *= torch.empty_like(masses).uniform_(lower, upper).unsqueeze(-1)
+            if getattr(dr, "recompute_inertia", True):
+                inertias *= (masses / nominal_masses).unsqueeze(-1)
+            if getattr(dr, "randomize_link_inertia", False):
+                lower, upper = dr.link_inertia_scale_range
+                if not 0 < lower <= upper:
+                    raise ValueError("link_inertia_scale_range must be positive and ordered")
+                inertias *= torch.empty_like(masses).uniform_(lower, upper).unsqueeze(-1)
             view.set_inertias(inertias, ids)
         view.set_coms(coms, ids)
         runtime.critic_base_mass_offset[:] = (masses[:, base] - nominal_base_mass)[:, None].to(self.device)
@@ -334,6 +353,7 @@ class Dog03CyberstarEnv(ManagerBasedRLEnv):
         if getattr(dr, "randomize_dynamic_friction", False):
             buckets = torch.empty(64).uniform_(*dr.dynamic_friction_range)
             materials[:, :, 1] = buckets[torch.randint(0, 64, (self.num_envs,))][:, None]
+        materials[:, :, 1] = torch.minimum(materials[:, :, 1], materials[:, :, 0])
         if getattr(dr, "randomize_restitution", False):
             buckets = torch.empty(64).uniform_(*dr.restitution_range)
             materials[:, :, 2] = buckets[torch.randint(0, 64, (self.num_envs,))][:, None]

@@ -9,6 +9,7 @@ from isaaclab.utils import configclass
 
 from ..flat_env_cfg import Dog03Flat282EnvCfg
 from . import lab
+from .actuator import CyberstarMotorActuator
 from .asset import spawn_dog03
 from .runtime import flat_config, source_config
 from .terrain import CyberstarDiscreteTerrainCfg
@@ -72,15 +73,24 @@ class Dog03CyberstarDomainRandEnvCfg(Dog03Flat282EnvCfg):
         self.scene.robot.init_state.pos = tuple(self.cyberstar_config["init_state"]["pos"])
         self.scene.robot.soft_joint_pos_limit_factor = self.cyberstar_config["rewards"]["soft_dof_pos_limit"]
         self.actions.joint_pos.class_type = lab.CyberstarJointAction
+        self.actions.joint_pos.scale = self.cyberstar_config["control"]["action_scale"]
+        self.decimation = self.cyberstar_config["control"]["decimation"]
+        self.sim.dt = self.cyberstar_config["sim"]["dt"]
+        self.sim.render_interval = self.decimation
+        self.episode_length_s = self.cyberstar_config["env"]["episode_length_s"]
+        self.scene.contact_forces.update_period = self.sim.dt
         # PD is computed explicitly in CyberstarJointAction, including strength scaling before clipping.
         for name, old in list(self.scene.robot.actuators.items()):
             self.scene.robot.actuators[name] = IdealPDActuatorCfg(
+                class_type=CyberstarMotorActuator,
                 joint_names_expr=old.joint_names_expr,
                 effort_limit=old.effort_limit,
                 velocity_limit=old.velocity_limit,
                 stiffness=0.0,
                 damping=0.0,
                 friction=0.0,
+                dynamic_friction=0.0,
+                viscous_friction=0.0,
             )
         self.scene.terrain.terrain_type = "generator"
         self.scene.terrain.terrain_generator = TerrainGeneratorCfg(
@@ -103,7 +113,7 @@ class Dog03CyberstarDomainRandEnvCfg(Dog03Flat282EnvCfg):
         self.scene.terrain.physics_material.restitution = 0.0
         # One existing ray caster supplies a shared terrain mesh for exact arbitrary-point scans.
         self.scene.height_scanner_base.prim_path = "{ENV_REGEX_NS}/Robot/base_link"
-        self.scene.height_scanner_base.update_period = 0.02
+        self.scene.height_scanner_base.update_period = self.sim.dt * self.decimation
         self.observations = ObservationsCfg()
         self.commands = CommandsCfg()
         self.events = EventsCfg()

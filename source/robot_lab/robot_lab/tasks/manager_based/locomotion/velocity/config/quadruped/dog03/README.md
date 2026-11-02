@@ -104,12 +104,36 @@ The following ATDog randomizations are also implemented in the Cyberstar adapter
 
 Stairs retain their existing randomized spawn yaw and heading reference; only
 height, roll and pitch are added there. Existing XY placement, reset velocities,
-PD/mass ranges and push scheduling remain unchanged rather than copying stronger
+PD/mass ranges and push magnitudes remain unchanged rather than copying stronger
 ATDog settings onto a different robot. Each addition has a separate
 `domain_rand.randomize_*` switch in `cyberstar/config.json` and
 `cyberstar/stairs_config.json`. Flat-282 disables all these switches; playback
 (`cyberstar_play`) skips the added randomizations and clears external wrenches.
 Actor and critic dimensions, observation ordering and HIM network sizes are unchanged.
+
+PD gains now come from `env.control.stiffness` and `env.control.damping` in JSON,
+including exact-joint or full-match regex overrides. The identified passive motor
+model is independent of PD damping: `env.control.motor_friction.coulomb` (N·m)
+and `.viscous` (N·m·s/rad) contain all 12 joints, initially zero.
+`domain_rand.randomize_joint_friction` samples additive coefficient offsets at
+reset; both offset ranges initially contain only zero. Nominal friction also
+applies in Flat-282 and playback, while coefficient randomization does not.
+Drive torque is saturated before passive friction is subtracted, without a
+second motor clamp on the resulting joint torque.
+
+The renewed ATDog audit also adds mass-dependent inertia scaling
+(`domain_rand.recompute_inertia`), reset joint velocity sampling (initially zero),
+and per-environment resampled push intervals (`randomize_push_interval`): 10–15 s
+on robust flat ground and 15–20 s on stairs. Zero offsets or disabling the switch
+restore fixed intervals. The action-delay buffer follows the configured
+maximum instead of assuming one delayed step. Link mass/COM sampling excludes
+the base, dynamic friction cannot exceed static friction, and the robust-flat
+push gate measures terrain-relative height. JSON timestep, decimation, action
+scale and episode duration also drive the simulator and sensor timing. See
+[`DOMAIN_RANDOMIZATION.md`](DOMAIN_RANDOMIZATION.md) for the complete source
+inventory, units, configuration examples and intentional differences from ATDog.
+Stair clearance rewards also honor `stair_clearance_progress_floor`: commanded
+motion retains a lifting signal when blocked, while zero commands earn none.
 
 Actor/critic hidden dimensions are `[512, 256, 128]` with ELU. HIM retains the
 `[128, 64, 16]` encoder, `[128, 64]` target encoder and 32 prototypes.

@@ -375,6 +375,36 @@
       "damping": {
         "joint": 1.0
       },
+      "motor_friction": {
+        "coulomb": {
+          "FL_hip_joint": 0.0,
+          "FL_thigh_joint": 0.0,
+          "FL_calf_joint": 0.0,
+          "FR_hip_joint": 0.0,
+          "FR_thigh_joint": 0.0,
+          "FR_calf_joint": 0.0,
+          "RL_hip_joint": 0.0,
+          "RL_thigh_joint": 0.0,
+          "RL_calf_joint": 0.0,
+          "RR_hip_joint": 0.0,
+          "RR_thigh_joint": 0.0,
+          "RR_calf_joint": 0.0
+        },
+        "viscous": {
+          "FL_hip_joint": 0.0,
+          "FL_thigh_joint": 0.0,
+          "FL_calf_joint": 0.0,
+          "FR_hip_joint": 0.0,
+          "FR_thigh_joint": 0.0,
+          "FR_calf_joint": 0.0,
+          "RL_hip_joint": 0.0,
+          "RL_thigh_joint": 0.0,
+          "RL_calf_joint": 0.0,
+          "RR_hip_joint": 0.0,
+          "RR_thigh_joint": 0.0,
+          "RR_calf_joint": 0.0
+        }
+      },
       "decimation": 4,
       "gait_cycle_s": 0.5,
       "recovery_gait_cycle_s": 0.35,
@@ -383,6 +413,12 @@
       }
     },
     "domain_rand": {
+      "randomize_joint_friction": true,
+      "joint_coulomb_friction_offset_range": [0.0, 0.0],
+      "joint_viscous_friction_offset_range": [0.0, 0.0],
+      "recompute_inertia": true,
+      "randomize_push_interval": true,
+      "push_interval_offset_range_s": [0.0, 5.0],
       "randomize_dynamic_friction": true,
       "dynamic_friction_range": [0.3, 0.8],
       "randomize_restitution": true,
@@ -496,6 +532,7 @@
         0.0,
         0.4
       ],
+      "reset_dof_velocity_range": [0.0, 0.0],
       "reset_dof_scale_range": [
         0.95,
         1.05

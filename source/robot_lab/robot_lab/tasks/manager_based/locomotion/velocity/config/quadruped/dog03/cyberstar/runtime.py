@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import math
+import re
 import torch
 from pathlib import Path
 from types import SimpleNamespace
@@ -29,16 +31,55 @@ def flat_config():
     return config
 
 
+def joint_values(config, joint_names, device, label):
+    """Resolve a common `joint` default, full-match regexes and exact joint overrides."""
+    entries = vars(config) if isinstance(config, SimpleNamespace) else config
+    if isinstance(entries, (int, float)):
+        entries = {"joint": entries}
+    for pattern in entries:
+        if pattern != "joint" and not any(re.fullmatch(pattern, name) for name in joint_names):
+            raise ValueError(f"{label}: pattern {pattern!r} does not match any joint")
+    values = []
+    for name in joint_names:
+        matches = [value for pattern, value in entries.items() if pattern != "joint" and re.fullmatch(pattern, name)]
+        if name in entries:
+            value = entries[name]
+        elif len(matches) == 1:
+            value = matches[0]
+        elif not matches and "joint" in entries:
+            value = entries["joint"]
+        else:
+            raise ValueError(f"{label}: expected one value for {name}, found {len(matches)} matches")
+        values.append(value)
+    result = torch.tensor(values, device=device, dtype=torch.float)
+    if not torch.isfinite(result).all() or (result < 0).any():
+        raise ValueError(f"{label}: values must be finite and non-negative")
+    return result.unsqueeze(0)
+
+
 class CyberstarRuntime(Dog03Flat282DomainRandMixin, Dog03Flat282Mixin, Dog03Flat47Mixin, Dog03Flat47):
     """Own the original tensor state; simulator I/O is injected by the Lab adapter."""
 
     def __init__(self, num_envs, device, dt=0.02, config=None):
+        if not math.isfinite(dt) or dt <= 0:
+            raise ValueError("The control timestep must be finite and positive")
         self.cfg = namespace(config or source_config()["env"])
         self.num_envs, self.device, self.dt = num_envs, device, dt
         self.num_actions = self.num_dof = self.num_dofs = 12
         self.dof_names = [
             f"{leg}_{joint}_joint" for leg in ("FL", "FR", "RL", "RR") for joint in ("hip", "thigh", "calf")
         ]
+        self.p_gains = joint_values(self.cfg.control.stiffness, self.dof_names, device, "control.stiffness")
+        self.d_gains = joint_values(self.cfg.control.damping, self.dof_names, device, "control.damping")
+        friction = getattr(self.cfg.control, "motor_friction", SimpleNamespace(coulomb=0.0, viscous=0.0))
+        self.nominal_joint_coulomb_friction = joint_values(
+            friction.coulomb, self.dof_names, device, "control.motor_friction.coulomb"
+        )
+        self.nominal_joint_viscous_friction = joint_values(
+            friction.viscous, self.dof_names, device, "control.motor_friction.viscous"
+        )
+        self.joint_coulomb_friction = self.nominal_joint_coulomb_friction.repeat(num_envs, 1)
+        self.joint_viscous_friction = self.nominal_joint_viscous_friction.repeat(num_envs, 1)
         self.feet_indices = torch.arange(4, device=device)
         # Four ordered foot aliases precede the URDF's real bodies.
         bodies = self.cfg.asset.body_names
@@ -47,7 +88,8 @@ class CyberstarRuntime(Dog03Flat282DomainRandMixin, Dog03Flat282Mixin, Dog03Flat
         )
         self.obs_scales = self.cfg.normalization.obs_scales
         self.command_ranges = vars(self.cfg.commands.ranges)
-        self.cfg.domain_rand.push_interval = int(self.cfg.domain_rand.push_interval_s / dt)
+        self.cfg.domain_rand.push_interval = max(1, math.ceil(self.cfg.domain_rand.push_interval_s / dt))
+        self.next_push_steps = torch.zeros(num_envs, device=device, dtype=torch.long)
         self.ppo_iteration = 1000
         self.add_noise = self.cfg.noise.add_noise
         self.obs_buf = self.zeros(282)
@@ -75,7 +117,10 @@ class CyberstarRuntime(Dog03Flat282DomainRandMixin, Dog03Flat282Mixin, Dog03Flat
             [self.obs_scales.lin_vel, self.obs_scales.lin_vel, self.obs_scales.ang_vel], device=device
         )
         self.actions, self.last_actions = self.zeros(12), self.zeros(12)
-        self.action_history = torch.zeros(num_envs, 2, 12, device=device)
+        delay_min, delay_max = self.cfg.domain_rand.control_delay_steps
+        if not isinstance(delay_min, int) or not isinstance(delay_max, int) or not 0 <= delay_min <= delay_max:
+            raise ValueError("control_delay_steps must be non-negative, ordered integers")
+        self.action_history = torch.zeros(num_envs, delay_max + 1, 12, device=device)
         self.motor_strengths = torch.ones(num_envs, 12, device=device)
         self.default_joint_angle_offsets = self.zeros(12)
         self.kp_scales, self.kd_scales = torch.ones_like(self.motor_strengths), torch.ones_like(self.motor_strengths)
@@ -116,6 +161,7 @@ class CyberstarRuntime(Dog03Flat282DomainRandMixin, Dog03Flat282Mixin, Dog03Flat
             [[0, 0, 0], [0.16, 0, 0], [-0.16, 0, 0], [0, 0.10, 0], [0, -0.10, 0]], device=device
         )
         self.reset_idx(torch.arange(num_envs, device=device))
+        self.resample_push_schedule(torch.arange(num_envs, device=device))
 
     def zeros(self, *dims):
         return torch.zeros(self.num_envs, *dims, device=self.device)
@@ -133,6 +179,48 @@ class CyberstarRuntime(Dog03Flat282DomainRandMixin, Dog03Flat282Mixin, Dog03Flat
             else 0
         )
 
+    def randomize_joint_friction(self, ids):
+        config = self.cfg.domain_rand
+        enabled = getattr(config, "randomize_joint_friction", False) and not self.cfg.env.test
+        for name in ("coulomb", "viscous"):
+            nominal = getattr(self, f"nominal_joint_{name}_friction")
+            target = getattr(self, f"joint_{name}_friction")
+            values = nominal.expand(len(ids), -1).clone()
+            if enabled:
+                lower, upper = getattr(config, f"joint_{name}_friction_offset_range")
+                if not all(math.isfinite(value) for value in (lower, upper)) or lower > upper:
+                    raise ValueError(f"joint_{name}_friction_offset_range must be finite and ordered")
+                values += torch.empty_like(values).uniform_(lower, upper)
+            target[ids] = values.clamp_min(0)
+
+    def compute_motor_torques(self, targets, positions, velocities, limits):
+        torque = (
+            self.p_gains * self.kp_scales * (targets + self.default_joint_angle_offsets - positions)
+            - self.d_gains * self.kd_scales * velocities
+        ) * self.motor_strengths
+        self.torques[:] = torch.clamp(torque, -limits, limits)
+        return self.torques
+
+    def resample_push_schedule(self, ids):
+        config = self.cfg.domain_rand
+        lower, upper = getattr(config, "push_interval_offset_range_s", (0.0, 0.0))
+        base = config.push_interval_s
+        if not all(math.isfinite(value) for value in (base, lower, upper)) or lower > upper or base + lower <= 0:
+            raise ValueError("push interval and offsets must be finite, ordered and yield positive intervals")
+        offsets = torch.zeros(len(ids), device=self.device)
+        if getattr(config, "randomize_push_interval", False) and not self.cfg.env.test:
+            offsets.uniform_(lower, upper)
+        steps = ((base + offsets) / self.dt).ceil().long().clamp_min(1)
+        self.next_push_steps[ids] = self.episode_length_buf[ids] + steps
+
+    def _scheduled_push_env_ids(self, interval):
+        lengths = self.episode_length_buf
+        if getattr(self.cfg.domain_rand, "randomize_push_interval", False) and not self.cfg.env.test:
+            ids = ((lengths > 0) & (lengths >= self.next_push_steps)).nonzero(as_tuple=False).flatten()
+            self.resample_push_schedule(ids)
+            return ids
+        return ((lengths > 0) & (lengths % interval == 0)).nonzero(as_tuple=False).flatten()
+
     def reset(self, ids):
         self.reset_idx(ids)
         for name in (
@@ -146,6 +234,7 @@ class CyberstarRuntime(Dog03Flat282DomainRandMixin, Dog03Flat282Mixin, Dog03Flat
         ):
             getattr(self, name)[ids] = 0
         self.episode_length_buf[ids] = 0
+        self.resample_push_schedule(ids)
         self.previous_foot_velocities[ids] = 0
         self.capture_recovery_active[ids] = False
         self.capture_recovery_steps[ids] = 0
@@ -158,7 +247,7 @@ class CyberstarRuntime(Dog03Flat282DomainRandMixin, Dog03Flat282Mixin, Dog03Flat
             active = self.capture_recovery_active
             limit = self.cfg.commands.capture_recovery_action_limit
             actions[active] = actions[active].clamp(-limit, limit)
-        self.action_history[:, 1] = self.action_history[:, 0]
+        self.action_history[:, 1:] = self.action_history[:, :-1].clone()
         self.action_history[:, 0] = actions
         self.actions[:] = self.action_history[torch.arange(self.num_envs, device=self.device), self.control_delay]
         return self.actions
@@ -188,6 +277,7 @@ class CyberstarRuntime(Dog03Flat282DomainRandMixin, Dog03Flat282Mixin, Dog03Flat
             -1, 1
         ) * self.obs_scales.height_measurements
 
-    def _local_base_height(self):
-        positions = self.base_pos[:, None, :] + self.local_height_offsets[None, :, :]
-        return torch.median(self.base_pos[:, 2:3] - self._height_query(positions), dim=1, keepdim=True).values
+    def _local_base_height(self, env_ids=None):
+        base_pos = self.base_pos if env_ids is None else self.base_pos[env_ids]
+        positions = base_pos[:, None, :] + self.local_height_offsets[None, :, :]
+        return torch.median(base_pos[:, 2:3] - self._height_query(positions), dim=1, keepdim=True).values

@@ -29,11 +29,7 @@ class TensorBase:
         Leave freshly reset and non-selected environments untouched.
         """
         interval = max(1, int(self.cfg.domain_rand.push_interval))
-        env_ids = (
-            ((self.episode_length_buf > 0) & (self.episode_length_buf % interval == 0))
-            .nonzero(as_tuple=False)
-            .flatten()
-        )
+        env_ids = self._scheduled_push_env_ids(interval)
         if len(env_ids) == 0:
             return
         max_vel = self.cfg.domain_rand.max_push_vel_xy
@@ -2645,9 +2641,7 @@ class Dog03Flat282DomainRandMixin:
         env_ids = torch.arange(self.num_envs, device=self.device)
         interval = int(domain_rand.push_interval)
         # Do not immediately push an environment that has just been reset.
-        push_env_ids = env_ids[
-            (self.episode_length_buf[env_ids] > 0) & (self.episode_length_buf[env_ids] % interval == 0)
-        ]
+        push_env_ids = env_ids[self._scheduled_push_env_ids(interval)]
         if len(push_env_ids) == 0:
             return None
 
@@ -2656,6 +2650,7 @@ class Dog03Flat282DomainRandMixin:
         # unrealistically deep contact in a single PhysX step.  Standing and
         # ordinary locomotion remain eligible, so recovery is still trained.
         root_state = self.root_states[push_env_ids]
+        push_base_height = self._local_base_height(push_env_ids).squeeze(1)
         root_is_finite = torch.isfinite(root_state[:, :13]).all(dim=1)
         gravity_is_finite = torch.isfinite(self.projected_gravity[push_env_ids]).all(dim=1)
         tilt = torch.norm(self.projected_gravity[push_env_ids, :2], dim=1)
@@ -2666,8 +2661,8 @@ class Dog03Flat282DomainRandMixin:
             & (torch.abs(root_state[:, 9]) < float(domain_rand.push_max_safe_vertical_speed))
             & (torch.norm(root_state[:, 7:9], dim=1) < float(domain_rand.push_max_safe_planar_speed))
             & (torch.norm(root_state[:, 10:13], dim=1) < float(domain_rand.push_max_safe_angular_speed))
-            & (root_state[:, 2] > float(domain_rand.push_min_safe_base_height))
-            & (root_state[:, 2] < float(domain_rand.push_max_safe_base_height))
+            & (push_base_height > float(domain_rand.push_min_safe_base_height))
+            & (push_base_height < float(domain_rand.push_max_safe_base_height))
         )
         # Diagnostic A/B switch: the known-good pre-recovery implementation
         # did not condition a velocity impulse on an already-active foot
