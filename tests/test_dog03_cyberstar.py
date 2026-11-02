@@ -23,6 +23,25 @@ class Dog03CyberstarTest(unittest.TestCase):
         torch.manual_seed(7)
         self.runtime = CyberstarRuntime(16, "cpu")
 
+    def test_default_joint_angle_randomization(self):
+        runtime = self.runtime
+        ids = torch.tensor([1, 4, 7])
+        runtime.randomize_default_joint_angles(ids)
+        offsets = runtime.default_joint_angle_offsets.clone()
+        self.assertTrue((offsets.abs() <= 0.1).all())
+        self.assertTrue((offsets[ids].abs() > 0).all())
+        self.assertEqual(offsets[0].abs().sum().item(), 0)
+        self.assertFalse(torch.equal(offsets[1], offsets[4]))
+        runtime.randomize_default_joint_angles(ids)
+        self.assertFalse(torch.equal(offsets[ids], runtime.default_joint_angle_offsets[ids]))
+        runtime.cfg.env.test = True
+        runtime.randomize_default_joint_angles(ids)
+        self.assertEqual(runtime.default_joint_angle_offsets.abs().sum().item(), 0)
+        runtime.cfg.env.test = False
+        runtime.cfg.domain_rand.randomize_default_joint_angles = False
+        runtime.randomize_default_joint_angles(ids)
+        self.assertEqual(runtime.default_joint_angle_offsets.abs().sum().item(), 0)
+
     def test_flat_config_preserves_network_contract_and_source(self):
         config = flat_config()
         original = source_config()["env"]
@@ -52,13 +71,15 @@ class Dog03CyberstarTest(unittest.TestCase):
         exec(compile(ast.Module(body=[method], type_ignores=[]), str(PACKAGE / "lab.py"), "exec"), namespace)
         for enabled in (False, True):
             runtime = CyberstarRuntime(16, "cpu", config=source_config()["env"] if enabled else flat_config())
-            masses = torch.ones(16, 1)
-            coms = torch.zeros(16, 1, 7)
+            masses = torch.ones(16, 5)
+            coms = torch.zeros(16, 5, 7)
+            inertias = torch.eye(3).reshape(1, 1, 9).repeat(16, 5, 1)
             materials = torch.ones(16, 1, 3)
             view = SimpleNamespace(
                 get_masses=lambda: masses, get_coms=lambda: coms, get_material_properties=lambda: materials,
                 set_masses=lambda *args: None, set_coms=lambda *args: None,
                 set_material_properties=lambda *args: None,
+                get_inertias=lambda: inertias, set_inertias=lambda *args: None,
             )
             env = SimpleNamespace(
                 cyberstar=runtime, num_envs=16, device="cpu",
@@ -66,6 +87,17 @@ class Dog03CyberstarTest(unittest.TestCase):
             )
             namespace["_randomize_startup"](env)
             if enabled:
+                self.assertTrue((masses[:, 1:] >= 0.9).all())
+                self.assertTrue((masses[:, 1:] <= 1.1).all())
+                self.assertGreater((masses[:, 1:] - 1).abs().sum().item(), 0)
+                self.assertTrue((coms[:, 1:, :3].abs() <= 0.005).all())
+                self.assertGreater(coms[:, 1:, :3].abs().sum().item(), 0)
+                eigenvalues = torch.linalg.eigvalsh(inertias.reshape(16, 5, 3, 3))
+                self.assertTrue((eigenvalues >= 0.9).all())
+                self.assertTrue((eigenvalues <= 1.1).all())
+                self.assertGreater((eigenvalues - 1).abs().sum().item(), 0)
+                torch.testing.assert_close(runtime.critic_base_mass_offset[:, 0], masses[:, 0] - 1)
+                torch.testing.assert_close(runtime.critic_base_com_offset, coms[:, 0, :3])
                 self.assertGreater(runtime.critic_base_mass_offset.abs().sum().item(), 0)
                 self.assertGreater(runtime.critic_base_com_offset.abs().sum().item(), 0)
                 self.assertGreater((runtime.critic_friction - 1).abs().sum().item(), 0)
@@ -73,6 +105,7 @@ class Dog03CyberstarTest(unittest.TestCase):
                 torch.testing.assert_close(masses, torch.ones_like(masses))
                 torch.testing.assert_close(coms, torch.zeros_like(coms))
                 torch.testing.assert_close(materials[:, :, :2], torch.ones_like(materials[:, :, :2]))
+                torch.testing.assert_close(inertias, torch.eye(3).reshape(1, 1, 9).repeat(16, 5, 1))
                 torch.testing.assert_close(runtime.critic_base_mass_offset, torch.zeros(16, 1))
                 torch.testing.assert_close(runtime.critic_base_com_offset, torch.zeros(16, 3))
                 torch.testing.assert_close(runtime.critic_friction, torch.ones(16, 1))

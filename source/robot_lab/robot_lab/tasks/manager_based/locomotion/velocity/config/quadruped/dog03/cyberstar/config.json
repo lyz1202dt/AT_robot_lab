@@ -290,6 +290,18 @@
       }
     },
     "domain_rand": {
+      "randomize_link_mass": true,
+      "link_mass_scale_range": [0.9, 1.1],
+      "randomize_link_inertia": true,
+      "link_inertia_scale_range": [0.9, 1.1],
+      "randomize_link_com": true,
+      "link_com_range": {
+        "x": [-0.005, 0.005],
+        "y": [-0.005, 0.005],
+        "z": [-0.005, 0.005]
+      },
+      "randomize_default_joint_angles": true,
+      "default_joint_angle_range": [-0.1, 0.1],
       "added_mass_range": [
         -0.25,
         0.25
@@ -297,16 +309,16 @@
       "advanced_push_end_iteration": 1800,
       "advanced_push_start_iteration": 1500,
       "com_range_x": [
-        -0.005,
-        0.005
+        -0.02,
+        0.02
       ],
       "com_range_y": [
         -0.005,
         0.005
       ],
       "com_range_z": [
-        -0.003,
-        0.003
+        -0.03,
+        0.03
       ],
       "control_delay_steps": [
         0,

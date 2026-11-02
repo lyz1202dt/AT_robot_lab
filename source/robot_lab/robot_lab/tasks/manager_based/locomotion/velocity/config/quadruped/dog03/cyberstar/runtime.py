@@ -77,6 +77,7 @@ class CyberstarRuntime(Dog03Flat282DomainRandMixin, Dog03Flat282Mixin, Dog03Flat
         self.actions, self.last_actions = self.zeros(12), self.zeros(12)
         self.action_history = torch.zeros(num_envs, 2, 12, device=device)
         self.motor_strengths = torch.ones(num_envs, 12, device=device)
+        self.default_joint_angle_offsets = self.zeros(12)
         self.kp_scales, self.kd_scales = torch.ones_like(self.motor_strengths), torch.ones_like(self.motor_strengths)
         self.control_delay = torch.zeros(num_envs, device=device, dtype=torch.long)
         self.critic_friction = torch.ones(num_envs, 1, device=device)
@@ -123,6 +124,14 @@ class CyberstarRuntime(Dog03Flat282DomainRandMixin, Dog03Flat282Mixin, Dog03Flat
         if getattr(self, "external_commands", False):
             return None
         return super()._resample_commands(env_ids)
+
+    def randomize_default_joint_angles(self, ids):
+        config = self.cfg.domain_rand
+        self.default_joint_angle_offsets[ids] = (
+            torch.empty_like(self.default_joint_angle_offsets[ids]).uniform_(*config.default_joint_angle_range)
+            if getattr(config, "randomize_default_joint_angles", False) and not self.cfg.env.test
+            else 0
+        )
 
     def reset(self, ids):
         self.reset_idx(ids)

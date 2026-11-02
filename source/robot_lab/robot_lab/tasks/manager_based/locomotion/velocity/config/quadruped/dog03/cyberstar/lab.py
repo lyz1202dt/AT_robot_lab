@@ -67,7 +67,8 @@ class CyberstarJointAction(JointPositionAction):
         q = self._asset.data.joint_pos[:, self._joint_ids]
         dq = self._asset.data.joint_vel[:, self._joint_ids]
         torque = (
-            30 * runtime.kp_scales * (self.processed_actions - q) - runtime.kd_scales * dq
+            30 * runtime.kp_scales * (self.processed_actions + runtime.default_joint_angle_offsets - q)
+            - runtime.kd_scales * dq
         ) * runtime.motor_strengths
         limits = self._asset.data.joint_effort_limits[:, self._joint_ids]
         runtime.torques[:] = torch.clamp(torque, -limits, limits)
@@ -138,6 +139,8 @@ def reset_robot(env, env_ids):
         else 0
     )
     q = robot.data.default_joint_pos[ids].clone()
+    runtime.randomize_default_joint_angles(ids)
+    q[:, env._joint_ids] += runtime.default_joint_angle_offsets[ids]
     if not runtime.cfg.env.test:
         q *= torch.empty_like(q).uniform_(*runtime.cfg.init_state.reset_dof_scale_range)
     robot.write_root_pose_to_sim(state[:, :7], env_ids=ids)
@@ -250,6 +253,16 @@ class Dog03CyberstarEnv(ManagerBasedRLEnv):
         masses, coms = view.get_masses(), view.get_coms()
         base = robot.find_bodies("base_link")[0][0]
         dr = runtime.cfg.domain_rand
+        nominal_base_mass = masses[:, base].clone()
+        nominal_base_com = coms[:, base, :3].clone()
+        if getattr(dr, "randomize_link_mass", False):
+            lower, upper = dr.link_mass_scale_range
+            if not 0 < lower <= upper:
+                raise ValueError("link_mass_scale_range must be positive and ordered")
+            masses *= torch.empty_like(masses).uniform_(lower, upper)
+        if getattr(dr, "randomize_link_com", False):
+            for axis, name in enumerate(("x", "y", "z")):
+                coms[:, :, axis] += torch.empty_like(masses).uniform_(*getattr(dr.link_com_range, name))
         mass = (
             torch.empty(self.num_envs).uniform_(*dr.added_mass_range)
             if dr.randomize_base_mass else torch.zeros(self.num_envs)
@@ -266,12 +279,23 @@ class Dog03CyberstarEnv(ManagerBasedRLEnv):
             dim=-1,
         )
         masses[:, base] += mass
+        if (masses <= 0).any():
+            raise ValueError("Randomized link masses must be positive")
+        if dr.randomize_com:
+            coms[:, base, :3] = nominal_base_com
         coms[:, base, :3] += com
         ids = torch.arange(self.num_envs, dtype=torch.int32)
         view.set_masses(masses, ids)
+        if getattr(dr, "randomize_link_inertia", False):
+            lower, upper = dr.link_inertia_scale_range
+            if not 0 < lower <= upper:
+                raise ValueError("link_inertia_scale_range must be positive and ordered")
+            inertias = view.get_inertias()
+            inertias *= torch.empty_like(masses).uniform_(lower, upper).unsqueeze(-1)
+            view.set_inertias(inertias, ids)
         view.set_coms(coms, ids)
-        runtime.critic_base_mass_offset[:] = mass[:, None].to(self.device)
-        runtime.critic_base_com_offset[:] = com.to(self.device)
+        runtime.critic_base_mass_offset[:] = (masses[:, base] - nominal_base_mass)[:, None].to(self.device)
+        runtime.critic_base_com_offset[:] = (coms[:, base, :3] - nominal_base_com).to(self.device)
         # One coefficient per environment and all its collision shapes, as in source.
         if dr.randomize_friction:
             buckets = torch.empty(64).uniform_(*dr.friction_range)
