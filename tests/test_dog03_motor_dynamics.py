@@ -5,6 +5,7 @@ import importlib.util
 import json
 import sys
 import unittest
+from collections import deque
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -578,6 +579,7 @@ class Dog03MotorDynamicsTest(unittest.TestCase):
         config["sim"]["dt"] = 0.01
         config["control"].update(decimation=3, action_scale=0.15)
         config["env"]["episode_length_s"] = 12.0
+        config["init_state"].update(rot=[0.0, 0.0, 0.6, 0.8], lin_vel=[0.1, 0.2, 0.3], ang_vel=[0.4, 0.5, 0.6])
         tree = ast.parse((PACKAGE / "env_cfg.py").read_text())
         definition = next(
             node
@@ -617,6 +619,9 @@ class Dog03MotorDynamicsTest(unittest.TestCase):
         self.assertEqual(env.actions.joint_pos.scale, 0.15)
         self.assertEqual(env.scene.terrain.physics_material.restitution_combine_mode, "multiply")
         self.assertEqual(env.scene.terrain.physics_material.restitution, 1.0)
+        self.assertEqual(env.scene.robot.init_state.rot, (0.8, 0.0, 0.0, 0.6))
+        self.assertEqual(env.scene.robot.init_state.lin_vel, (0.1, 0.2, 0.3))
+        self.assertEqual(env.scene.robot.init_state.ang_vel, (0.4, 0.5, 0.6))
 
     def test_playback_flag_disables_noise_and_pushes_without_cli_overrides(self):
         load, namespace = adapter_function("load_managers", "Dog03CyberstarEnv")
@@ -693,6 +698,173 @@ class Dog03MotorDynamicsTest(unittest.TestCase):
         runtime.episode_length_buf[:] = 500
         torch.testing.assert_close(runtime._scheduled_push_env_ids(500), torch.arange(64))
 
+    def test_root_reset_ranges_are_per_axis_and_preserve_nominal_velocity(self):
+        for runtime in (CyberstarRuntime(8, "cpu"), CyberstarStairsRuntime(8, "cpu")):
+            runtime.cfg.init_state.reset_root_position_range = SimpleNamespace(x=[0.2, 0.2], y=[-0.3, -0.3])
+            runtime.cfg.init_state.reset_root_velocity_range = SimpleNamespace(x=[0.1, 0.1], yaw=[-0.2, -0.2])
+            original = torch.zeros(3, 13)
+            original[:, :3] = torch.tensor([2.0, 3.0, 0.4])
+            original[:, 7:13] = 0.5
+            state = original.clone()
+            runtime.randomize_reset_root_state(state)
+            torch.testing.assert_close(state[:, :3], original[:, :3] + torch.tensor([0.2, -0.3, 0.0]))
+            torch.testing.assert_close(state[:, 7:13], original[:, 7:13] + torch.tensor([0.1, 0, 0, 0, 0, -0.2]))
+            stair_state = original.clone()
+            runtime.randomize_reset_root_state(stair_state, include_xy=False)
+            torch.testing.assert_close(stair_state[:, :3], original[:, :3])
+            torch.testing.assert_close(stair_state[:, 7:13], state[:, 7:13])
+            runtime.cfg.env.test = True
+            runtime.randomize_reset_root_state(original)
+            torch.testing.assert_close(original[:, :3], torch.tensor([[2.0, 3.0, 0.4]]).repeat(3, 1))
+            torch.testing.assert_close(original[:, 7:13], torch.full((3, 6), 0.5))
+
+    def test_legacy_root_reset_ranges_remain_supported(self):
+        runtime = CyberstarRuntime(64, "cpu")
+        del runtime.cfg.init_state.reset_root_position_range
+        runtime.cfg.init_state.reset_root_velocity_range = 0.1
+        state = torch.zeros(64, 13)
+        runtime.randomize_reset_root_state(state)
+        self.assertTrue((state[:, :2].abs() <= 1).all())
+        self.assertTrue((state[:, 7:13].abs() <= 0.1).all())
+        self.assertGreater(state[:, :2].abs().sum().item(), 0)
+        self.assertGreater(state[:, 7:13].abs().sum().item(), 0)
+        torch.testing.assert_close(state[:, 2:7], torch.zeros(64, 5))
+
+    def test_invalid_root_reset_ranges_are_rejected(self):
+        for limits in (-0.1, float("inf"), True, {"x": [1, -1]}, {"yaw": [0, float("nan")]}, {"typo": [0, 1]}):
+            with self.subTest(limits=limits), self.assertRaisesRegex(ValueError, "reset_root_velocity_range"):
+                runtime = CyberstarRuntime(4, "cpu")
+                runtime.cfg.init_state.reset_root_velocity_range = limits
+                runtime.randomize_reset_root_state(torch.zeros(2, 13))
+
+    def test_root_reset_adapter_uses_axis_ranges_and_skips_stair_xy(self):
+        reset, namespace = adapter_function("reset_robot")
+        namespace["randomize_reset_pose_and_wrench"] = Mock()
+        runtime = CyberstarRuntime(8, "cpu", config=flat_config())
+        runtime.cfg.init_state.reset_root_position_range = SimpleNamespace(x=[0.2, 0.2], y=[-0.3, -0.3])
+        runtime.cfg.init_state.reset_root_velocity_range = SimpleNamespace(x=[0.1, 0.1], yaw=[-0.2, -0.2])
+        data = SimpleNamespace(
+            default_root_state=torch.zeros(8, 13),
+            default_joint_pos=runtime.default_dof_pos.repeat(8, 1),
+            soft_joint_pos_limits=runtime.dof_pos_limits.unsqueeze(0).repeat(8, 1, 1),
+            soft_joint_vel_limits=torch.full((8, 12), 30.0),
+        )
+        data.default_root_state[:, 7:13] = 0.5
+        robot = SimpleNamespace(
+            data=data,
+            actuators={},
+            write_root_pose_to_sim=Mock(),
+            write_root_velocity_to_sim=Mock(),
+            write_joint_state_to_sim=Mock(),
+        )
+
+        class Scene(dict):
+            env_origins = torch.ones(8, 3)
+
+        env = SimpleNamespace(
+            cyberstar=runtime,
+            num_envs=8,
+            device="cpu",
+            _joint_ids=list(range(12)),
+            scene=Scene(robot=robot),
+            _sync_cyberstar=Mock(),
+        )
+        ids = torch.tensor([1, 4])
+        reset(env, ids)
+        torch.testing.assert_close(
+            robot.write_root_pose_to_sim.call_args.args[0][:, :2], torch.tensor([[1.2, 0.7]]).repeat(2, 1)
+        )
+        expected_velocity = torch.tensor([[0.6, 0.5, 0.5, 0.5, 0.5, 0.3]]).repeat(2, 1)
+        torch.testing.assert_close(robot.write_root_velocity_to_sim.call_args.args[0], expected_velocity)
+        env._place_stair_reset = Mock()
+        reset(env, ids)
+        torch.testing.assert_close(env._place_stair_reset.call_args.args[0][:, :2], torch.ones(2, 2))
+
+    def test_body_state_velocities_match_link_positions_not_randomized_com(self):
+        synchronize, namespace = adapter_function("_sync_cyberstar", "Dog03CyberstarEnv")
+        namespace["euler_xyz_from_quat"] = lambda quaternion: (torch.zeros(8),) * 3
+        runtime = CyberstarRuntime(8, "cpu")
+        quaternion = torch.tensor([[1.0, 0.0, 0.0, 0.0]]).repeat(8, 1)
+        data = SimpleNamespace(
+            root_pos_w=torch.zeros(8, 3),
+            root_quat_w=quaternion,
+            root_com_vel_w=torch.zeros(8, 6),
+            root_lin_vel_b=torch.zeros(8, 3),
+            root_ang_vel_b=torch.zeros(8, 3),
+            projected_gravity_b=runtime.projected_gravity.clone(),
+            joint_pos=runtime.dof_pos.clone(),
+            joint_vel=runtime.dof_vel.clone(),
+            body_link_pos_w=torch.zeros(8, 5, 3),
+            body_link_quat_w=quaternion[:, None].repeat(1, 5, 1),
+            body_link_lin_vel_w=torch.full((8, 5, 3), 2.0),
+            body_link_ang_vel_w=torch.full((8, 5, 3), 3.0),
+            body_com_lin_vel_w=torch.full((8, 5, 3), 9.0),
+            body_com_ang_vel_w=torch.full((8, 5, 3), 3.0),
+        )
+        env = SimpleNamespace(
+            cyberstar=runtime,
+            _joint_ids=list(range(12)),
+            _foot_ids=[1, 2, 3, 4],
+            _sensor_ids=list(range(5)),
+            _foot_sensor_ids=[1, 2, 3, 4],
+            episode_length_buf=torch.zeros(8),
+            scene={
+                "robot": SimpleNamespace(data=data),
+                "contact_forces": SimpleNamespace(data=SimpleNamespace(net_forces_w=torch.zeros(8, 5, 3))),
+            },
+        )
+        synchronize(env)
+        torch.testing.assert_close(runtime.rigid_body_states[:, :, 7:10], torch.full((8, 9, 3), 2.0))
+        torch.testing.assert_close(runtime.rigid_body_states[:, :, 10:13], torch.full((8, 9, 3), 3.0))
+
+    def test_push_writer_refreshes_body_frame_velocity_observations(self):
+        write, _ = adapter_function("_write_cyberstar_velocity", "Dog03CyberstarEnv")
+        runtime = CyberstarRuntime(8, "cpu")
+        ids = torch.tensor([1, 4])
+        runtime.root_states[ids, 7:13] = 0.5
+        robot = SimpleNamespace(
+            write_root_velocity_to_sim=Mock(),
+            data=SimpleNamespace(root_lin_vel_b=torch.ones(8, 3), root_ang_vel_b=torch.full((8, 3), 2.0)),
+        )
+        write(SimpleNamespace(cyberstar=runtime, scene={"robot": robot}), ids)
+        torch.testing.assert_close(robot.write_root_velocity_to_sim.call_args.args[0], torch.full((2, 6), 0.5))
+        torch.testing.assert_close(runtime.base_lin_vel[ids], torch.ones(2, 3))
+        torch.testing.assert_close(runtime.base_ang_vel[ids], torch.full((2, 3), 2.0))
+        self.assertEqual(runtime.base_lin_vel[0].count_nonzero(), 0)
+        self.assertEqual(runtime.base_ang_vel[0].count_nonzero(), 0)
+
+    def test_him_episode_staggering_reschedules_pushes_from_the_new_lengths(self):
+        path = ROOT / "source/robot_lab/robot_lab/him/him_on_policy_runner.py"
+        tree = ast.parse(path.read_text())
+        definition = next(
+            node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "HIMOnPolicyRunner"
+        )
+        method = next(node for node in definition.body if isinstance(node, ast.FunctionDef) and node.name == "learn")
+        namespace = {"torch": torch, "deque": deque}
+        exec(compile(ast.Module(body=[method], type_ignores=[]), str(path), "exec"), namespace)
+        runtime = CyberstarRuntime(64, "cpu")
+        env = SimpleNamespace(
+            num_envs=64,
+            max_episode_length=1000,
+            episode_length_buf=runtime.episode_length_buf,
+            cyberstar=runtime,
+            get_observations=lambda: torch.zeros(64, 282),
+        )
+        runner = SimpleNamespace(
+            env=env,
+            log_dir=None,
+            device="cpu",
+            current_learning_iteration=0,
+            alg=SimpleNamespace(actor_critic=SimpleNamespace(train=Mock())),
+            _get_critic_observations=lambda: torch.zeros(64, 491),
+        )
+        namespace["learn"](runner, 0, init_at_random_ep_len=True)
+        self.assertIs(runtime.episode_length_buf, env.episode_length_buf)
+        delays = runtime.next_push_steps - env.episode_length_buf
+        self.assertTrue((delays >= 500).all())
+        self.assertTrue((delays <= 750).all())
+        self.assertEqual(runtime._scheduled_push_env_ids(500).numel(), 0)
+
     def test_atdog_active_event_inventory_is_covered(self):
         tree = ast.parse((VELOCITY / "velocity_env_cfg.py").read_text())
         event_cfg = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "EventCfg")
@@ -714,7 +886,11 @@ class Dog03MotorDynamicsTest(unittest.TestCase):
             "randomize_apply_external_force_torque": ("randomize_external_force_torque",),
             "randomize_reset_joints": ("reset_dof_scale_range", "reset_dof_velocity_range"),
             "randomize_actuator_gains": ("randomize_pd_gains", "kp_scale_range", "kd_scale_range"),
-            "randomize_reset_base": ("randomize_reset_pose", "reset_root_velocity_range"),
+            "randomize_reset_base": (
+                "randomize_reset_pose",
+                "reset_root_position_range",
+                "reset_root_velocity_range",
+            ),
             "randomize_push_robot": ("push_robots", "randomize_push_interval"),
         }
         self.assertEqual(set(active), set(coverage))

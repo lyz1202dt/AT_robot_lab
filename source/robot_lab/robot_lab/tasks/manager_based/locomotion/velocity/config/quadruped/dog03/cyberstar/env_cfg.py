@@ -71,6 +71,10 @@ class Dog03CyberstarDomainRandEnvCfg(Dog03Flat282EnvCfg):
         self.scene.robot.spawn.merge_fixed_joints = False
         self.scene.robot.init_state.joint_pos = dict(self.cyberstar_config["init_state"]["default_joint_angles"])
         self.scene.robot.init_state.pos = tuple(self.cyberstar_config["init_state"]["pos"])
+        rotation = self.cyberstar_config["init_state"]["rot"]
+        self.scene.robot.init_state.rot = (rotation[3], *rotation[:3])
+        self.scene.robot.init_state.lin_vel = tuple(self.cyberstar_config["init_state"]["lin_vel"])
+        self.scene.robot.init_state.ang_vel = tuple(self.cyberstar_config["init_state"]["ang_vel"])
         self.scene.robot.soft_joint_pos_limit_factor = self.cyberstar_config["rewards"]["soft_dof_pos_limit"]
         self.actions.joint_pos.class_type = lab.CyberstarJointAction
         self.actions.joint_pos.scale = self.cyberstar_config["control"]["action_scale"]

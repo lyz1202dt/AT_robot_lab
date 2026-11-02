@@ -279,6 +279,10 @@ class HIMOnPolicyRunner:
             env_unwrapped.episode_length_buf = torch.randint_like(
                 self.env.episode_length_buf, high=int(self.env.max_episode_length)
             )
+            task_runtime = getattr(env_unwrapped, "cyberstar", None)
+            if hasattr(task_runtime, "resample_push_schedule"):
+                task_runtime.episode_length_buf = env_unwrapped.episode_length_buf
+                task_runtime.resample_push_schedule(torch.arange(self.env.num_envs, device=task_runtime.device))
 
         obs = self.env.get_observations().to(self.device)
         critic_obs = self._get_critic_observations().to(self.device)

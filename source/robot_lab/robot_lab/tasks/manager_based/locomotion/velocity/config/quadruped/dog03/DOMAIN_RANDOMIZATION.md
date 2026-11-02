@@ -91,10 +91,10 @@ b_actual = max(0, b_nominal + uniform(viscous_offset_range))
 | 机身外力、力矩 | `randomize_external_force_torque`、`external_force_range`、`external_torque_range`，重置采样后持续施加 | Reset |
 | 关节初始位置、初始速度 | `init_state.reset_dof_scale_range`；新接入 `reset_dof_velocity_range`，初值 `[0, 0]` | Reset |
 | PD 刚度 / 阻尼倍率 | `randomize_pd_gains`、`kp_scale_range`、`kd_scale_range`；基值来自 JSON | Reset |
-| 初始根位置 / 姿态 / 速度 | 原有 XY 位置采样、`randomize_reset_pose`、`reset_pose_range`、`init_state.reset_root_velocity_range` | Reset |
+| 初始根位置 / 姿态 / 速度 | `init_state.reset_root_position_range`、`randomize_reset_pose`、`reset_pose_range`、逐轴 `init_state.reset_root_velocity_range` | Reset |
 | 定时随机速度推扰 | 原有推扰模式、幅度和安全门；新接入 `randomize_push_interval`、`push_interval_offset_range_s` | Interval |
 | 资产中的关节摩擦 | 新接入独立 Coulomb / viscous 力矩模型、每关节零占位和随机偏移 | 固定模型 + Reset |
-| `DelayedPDActuator` 的随机延迟 | 原有 `randomize_control_delay` / `control_delay_steps`；缓冲区现按最大延迟分配 | Reset |
+| `DelayedPDActuator` 的随机延迟 | `randomize_motor_delay` / `motor_delay_steps`（物理步）；另保留原策略步 `control_delay_steps` | Reset |
 | Actor 观测噪声 | 原有 `noise.add_noise` / `noise_scales`，覆盖角速度、重力、关节位置和关节速度 | 观测采样 |
 
 ATDog 共同父类当前有 9 个启用事件，表中前 10 行将接触材质和重置状态展开列出。
@@ -127,7 +127,7 @@ ATDog 调用的 Isaac Lab `randomize_rigid_body_material` 是从 64 个完整材
   每个环境的定时器在重置及到期后独立重采样；填写 `[0, 0]` 或关闭 `randomize_push_interval` 可恢复固定周期。
   平地已有安全门和训练课程仍可跳过某次推扰；楼梯仍使用原有平面速度推扰。
 - `control_delay_steps` 仍按**策略控制步**计，不是 ATDog 的物理步；没有悄悄改变已有检查点的时序语义。
-- 楼梯保留已有 XY 放置与随机 yaw/航向参考，不额外叠加 yaw；平地仍使用原 XY 采样。
+- 楼梯保留已有 XY 放置与随机 yaw/航向参考，不额外叠加 yaw；平地 XY 分轴配置，默认仍为各 ±1 m。
 - 282 actor 没有线速度与高度扫描通道；不为复制 ATDog 的这些噪声配置增加观测维度，也不污染干净的特权 critic。
 - ATDog 部分 URDF 有被动 foot 关节；03dog 使用固定 FOOT 刚体，不凭空增加被动自由度或其阻尼。
 - `armature`、电机温度、齿隙、Stribeck、重力随机化等没有在本次 ATDog 的启用随机事件中发现，不虚构为已存在功能。
@@ -161,6 +161,40 @@ ATDog 的 `DelayedPDActuatorCfg(min_delay=1, max_delay=2)` 不属于 `EventCfg`�
 - Actor 282 维、Critic 491 维和历史顺序不变；critic 原有 `delay` 槽仍表示策略步延迟，
   不将逐电机延迟硬塞入该槽，也不改变检查点张量尺寸。输入尺寸兼容不代表旧策略已经适应该新分布。
 
+## 初始状态随机化：补齐 ATDog 的逐轴控制
+
+ATDog 的 `reset_root_state_uniform` 能分别配置 XY 位置和六轴速度，而 03dog 此前将 XY 写死为 ±1 m，
+六轴速度共用一个标量。现在两份 JSON 的 `env.init_state` 明确列出：
+
+```json
+{
+  "reset_root_position_range": {
+    "x": [-1.0, 1.0],
+    "y": [-1.0, 1.0]
+  },
+  "reset_root_velocity_range": {
+    "x": [-0.1, 0.1],
+    "y": [-0.1, 0.1],
+    "z": [-0.1, 0.1],
+    "roll": [-0.1, 0.1],
+    "pitch": [-0.1, 0.1],
+    "yaw": [-0.1, 0.1]
+  }
+}
+```
+
+- 位置单位 m，线速度单位 m/s，角速度单位 rad/s；均为相对标称初始状态的加法偏移。
+- 分轴字典未列出的轴为零偏移；拒绝未知轴、非有限值和上下界颠倒。
+  旧版 `reset_root_velocity_range=0.1` 仍表示六轴各 ±0.1，缺少 XY 字典时兼容原来的 ±1 m。
+- 楼梯不使用此 XY 偏移，仍由 `stair_spawn_*` 放置在平台边缘，避免扰动到楼梯外。
+  楼梯 JSON 中 XY 占位为零，六轴速度与平地一样可以分别填写。
+- 普通 Flat-282 继续保留训练重置状态扰动，只有动力学随机化和推扰被禁用；这与此前的预训练语义一致。
+- `init_state.rot` 按源配置的 **xyzw** 转成 Isaac Lab 的 **wxyz**；
+  `lin_vel`、`ang_vel` 现在同样传给资产，并作为速度随机偏移的基准，不再被重置逻辑覆盖成零。
+  楼梯仍以其采样 yaw 替代标称姿态，保持航向参考一致。
+- 测试/回放模式不再随机采样平地 XY，也不添加速度偏移，保留标称速度；楼梯自己的位置/航向采样仍保留。
+  不因此承诺全确定性回放。
+
 ## 本次额外修正
 
 - 原有 `randomize_link_mass` 会再次缩放机身，使机身实际质量偏移超出 `added_mass_range`，也让 critic 的质量归一化范围失真。
@@ -170,7 +204,7 @@ ATDog 的 `DelayedPDActuatorCfg(min_delay=1, max_delay=2)` 不属于 `EventCfg`�
 - 重置关节位置与速度在写入仿真前按资产软限位裁剪，避免扩大角度偏移或速度范围后直接写入越界状态。
   正常默认范围不受影响，局部重置仍只作用于所选环境。
 - `cyberstar_play=true` 在环境内同时关闭观测噪声与定时推扰，不再只依赖 RSL-RL 回放脚本修改配置。
-  通过其他入口直接构造回放环境时也生效；原有 XY 放置和楼梯航向采样仍保留，不承诺全确定性回放。
+  通过其他入口直接构造回放环境时也生效；楼梯位置和航向采样仍保留，不承诺全确定性回放。
 - 保留 JSON 的 `env.test=true`，不再被默认的 `cyberstar_play=false` 覆盖；任一开关启用都进入测试模式。
 - 回放原先从 `_randomize_startup()` 提前返回，跳过 03dog 的标称接触材质初始化，
   导致导入资产的摩擦/恢复系数可能与无随机化训练不同，且 critic 仍错误报告摩擦为 1。
@@ -183,6 +217,12 @@ ATDog 的 `DelayedPDActuatorCfg(min_delay=1, max_delay=2)` 不属于 `EventCfg`�
 - 楼梯 `stair_clearance_progress_floor=0.35` 原先只写在 JSON 中，净空奖励直接乘以速度进度，受阻静止时仍为零。
   现在有运动指令但受阻时保留配置下限的抬脚奖励，正常前进获得更高奖励，零指令依然为零。
   此修正仅作用于 03dog，不修改 CSDog1 的既有实现。
+- 连杆状态原先混合 link 原点位置和 COM 速度，COM 偏移后会把刚体转动引起的速度差错误计入足端奖励。
+  现在配套使用 `body_link_pos_w` 与 `body_link_lin_vel_w`，足端滑移、触地和站立奖励使用同一参考点。
+- 速度推扰写回仿真后立即同步所选环境的机体系线速度/角速度，避免本步 actor 的 IMU 和 critic
+  线速度仍停留在推扰前的值；不修改未推扰环境，也不额外推进观测历史。
+- HIM 训练随机错开初始回合长度时，同步 runtime 的长度张量并重新采样推扰截止步。
+  否则随机后的回合长度可能已经超过原截止步，导致继续训练时刚启动就推扰，而不是等待配置的 10–15 s。
 
 这些修正会改变鲁棒训练的采样分布，但不改网络输入、关节顺序或已有检查点的张量尺寸。
 仍应从已验证的平地检查点继续训练并重新评估，不能把 CPU 回归通过等同于实机或物理仿真验证。
@@ -197,14 +237,16 @@ ATDog 的 `DelayedPDActuatorCfg(min_delay=1, max_delay=2)` 不属于 `EventCfg`�
 原有 03dog 测试继续检查 282 / 491 维观测与 HIM 检查点契约。
 新增回归还覆盖 ATDog 资产中的执行器延迟清单、逐电机采样、物理步推进、当前 PD 反馈、
 首目标填充、局部重置、关闭/回放/旧配置兼容、非法范围，以及测试模式的标称材质和 JSON 测试开关。
+本轮进一步覆盖逐轴初始状态、标称姿态/速度接入、旧标量范围兼容、楼梯 XY 隔离、非法轴/区间、
+link 原点速度、推扰后观测同步，以及 HIM 错开回合长度后的推扰定时器。
 
-本轮 55 项 03dog CPU 回归全部通过，包含新增的 7 项检查和完整尺寸的 HIM/PPO 更新。
-全仓 CPU 测试共 82 项，81 项通过；唯一失败是 CSDog1 的
+本轮 62 项 03dog CPU 回归全部通过，包含本轮新增的 7 项检查和完整尺寸的 HIM/PPO 更新。
+全仓 CPU 测试共 89 项，88 项通过；唯一失败是 CSDog1 的
 `test_blocked_clearance_has_signal_but_zero_command_does_not`。
 另从修改前的 Git HEAD 导出 CSDog1 测试及依赖单独运行，同一断言仍失败，确认是既有问题；本轮未修改 CSDog1。
 
 另在 Isaac Sim 的 headless GPU / PhysX 仿真中，对 Flat-282、DomainRand、楼梯和
-DomainRand 的 JSON 测试模式分别使用 4 个环境，每组运行 33 个控制步并插入局部重置，均通过。
+DomainRand 的 JSON 测试模式分别使用 4 个环境，每组运行 24 个控制步并插入局部重置，均通过。
 核对实际材质、静/动摩擦关系、64 桶上限、critic 摩擦均值、观测/奖励有限性，
-以及电机延迟 `[1, 2]`、物理步历史推进、局部重置隔离和测试模式延迟归零。
+以及逐轴非零初始速度、楼梯放置隔离、link 原点速度、推扰后机体系速度同步、局部重置电机历史隔离。
 短步验证不代表策略已收敛或通过实机验证。

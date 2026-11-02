@@ -152,17 +152,10 @@ def reset_robot(env, env_ids):
     count = len(ids)
     state = robot.data.default_root_state[ids].clone()
     state[:, :3] += env.scene.env_origins[ids]
-    state[:, :2] += torch.empty(count, 2, device=env.device).uniform_(-1, 1)
+    runtime.randomize_reset_root_state(state, include_xy=not hasattr(env, "_place_stair_reset"))
     if hasattr(env, "_place_stair_reset"):
         env._place_stair_reset(state, ids)
     randomize_reset_pose_and_wrench(env, state, ids)
-    # Source resets use the initial quaternion, with mild 6-D velocity variation.
-    velocity_limit = runtime.cfg.init_state.reset_root_velocity_range
-    state[:, 7:13] = (
-        torch.empty(count, 6, device=env.device).uniform_(-velocity_limit, velocity_limit)
-        if not runtime.cfg.env.test
-        else 0
-    )
     q = robot.data.default_joint_pos[ids].clone()
     runtime.randomize_default_joint_angles(ids)
     q[:, env._joint_ids] += runtime.default_joint_angle_offsets[ids]
@@ -259,7 +252,7 @@ class Dog03CyberstarEnv(ManagerBasedRLEnv):
         runtime.dof_pos[:] = data.joint_pos[:, self._joint_ids]
         runtime.dof_vel[:] = data.joint_vel[:, self._joint_ids]
         body_pos, body_quat = data.body_link_pos_w, data.body_link_quat_w
-        body_vel, body_ang = data.body_com_lin_vel_w, data.body_com_ang_vel_w
+        body_vel, body_ang = data.body_link_lin_vel_w, data.body_link_ang_vel_w
         quat = body_quat[:, self._foot_ids]
         foot_pos = body_pos[:, self._foot_ids]
         foot_vel = body_vel[:, self._foot_ids]
@@ -275,7 +268,10 @@ class Dog03CyberstarEnv(ManagerBasedRLEnv):
         runtime.episode_length_buf = self.episode_length_buf
 
     def _write_cyberstar_velocity(self, ids):
-        self.scene["robot"].write_root_velocity_to_sim(self.cyberstar.root_states[ids, 7:13], env_ids=ids)
+        robot = self.scene["robot"]
+        robot.write_root_velocity_to_sim(self.cyberstar.root_states[ids, 7:13], env_ids=ids)
+        self.cyberstar.base_lin_vel[ids] = robot.data.root_lin_vel_b[ids]
+        self.cyberstar.base_ang_vel[ids] = robot.data.root_ang_vel_b[ids]
 
     def _terrain_height_at(self, positions):
         if self.cfg.scene.terrain.terrain_type == "plane":

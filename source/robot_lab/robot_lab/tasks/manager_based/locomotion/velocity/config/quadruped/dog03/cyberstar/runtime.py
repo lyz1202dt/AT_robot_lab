@@ -57,6 +57,27 @@ def joint_values(config, joint_names, device, label):
     return result.unsqueeze(0)
 
 
+def sample_reset_ranges(config, axes, count, device, label):
+    """Sample per-axis reset offsets, accepting legacy symmetric scalar ranges."""
+    if isinstance(config, bool):
+        raise ValueError(f"{label}: expected per-axis ranges or a non-negative scalar")
+    if isinstance(config, (int, float)):
+        if not math.isfinite(config) or config < 0:
+            raise ValueError(f"{label}: the scalar range must be finite and non-negative")
+        entries = {axis: (-config, config) for axis in axes}
+    else:
+        entries = vars(config) if isinstance(config, SimpleNamespace) else config
+    if not isinstance(entries, dict) or set(entries) - set(axes):
+        raise ValueError(f"{label}: expected ranges for {', '.join(axes)}")
+    try:
+        limits = torch.tensor([entries.get(axis, (0.0, 0.0)) for axis in axes], device=device, dtype=torch.float)
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{label}: each axis must contain a lower and upper bound") from error
+    if limits.shape != (len(axes), 2) or not torch.isfinite(limits).all() or (limits[:, 0] > limits[:, 1]).any():
+        raise ValueError(f"{label}: ranges must contain finite, ordered lower and upper bounds")
+    return limits[:, 0] + torch.rand(count, len(axes), device=device) * (limits[:, 1] - limits[:, 0])
+
+
 class CyberstarRuntime(Dog03Flat282DomainRandMixin, Dog03Flat282Mixin, Dog03Flat47Mixin, Dog03Flat47):
     """Own the original tensor state; simulator I/O is injected by the Lab adapter."""
 
@@ -182,6 +203,23 @@ class CyberstarRuntime(Dog03Flat282DomainRandMixin, Dog03Flat282Mixin, Dog03Flat
         if getattr(self, "external_commands", False):
             return None
         return super()._resample_commands(env_ids)
+
+    def randomize_reset_root_state(self, state, include_xy=True):
+        """Add reset offsets to nominal state without disturbing stair placement."""
+        if self.cfg.env.test:
+            return
+        if include_xy:
+            positions = getattr(self.cfg.init_state, "reset_root_position_range", {"x": (-1, 1), "y": (-1, 1)})
+            state[:, :2] += sample_reset_ranges(
+                positions, ("x", "y"), len(state), self.device, "init_state.reset_root_position_range"
+            )
+        state[:, 7:13] += sample_reset_ranges(
+            self.cfg.init_state.reset_root_velocity_range,
+            ("x", "y", "z", "roll", "pitch", "yaw"),
+            len(state),
+            self.device,
+            "init_state.reset_root_velocity_range",
+        )
 
     def randomize_default_joint_angles(self, ids):
         config = self.cfg.domain_rand

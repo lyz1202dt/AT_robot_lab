@@ -184,6 +184,15 @@ copied from CSDog1; stage 4 uses 5-17 cm bands and 1500 iterations. Patches are
 the center platform near the stair edge, with a small heading perturbation.
 Stages are selected between runs.
 
+Root reset position (`init_state.reset_root_position_range`, XY) and velocity
+(`reset_root_velocity_range`, x/y/z/roll/pitch/yaw) now have per-axis ranges,
+matching ATDog's configurability without changing the previous training ranges.
+Velocity offsets are added to nominal `lin_vel`/`ang_vel`; nominal quaternion
+configuration is also applied. Stair XY/yaw placement keeps its own controls.
+Link-origin positions and velocities now share a reference point, pushed root
+velocities reach observations immediately, and HIM's initial episode staggering
+reschedules push deadlines instead of triggering premature pushes.
+
 CPU checks (tensor runtime and a full-size HIM/PPO update, without physics):
 
 ```bash
