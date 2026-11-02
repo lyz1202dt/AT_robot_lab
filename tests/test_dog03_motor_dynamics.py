@@ -186,7 +186,12 @@ class Dog03MotorDynamicsTest(unittest.TestCase):
             joint_viscous_friction=torch.zeros(8, 12),
         )
         robot = SimpleNamespace(
-            data=SimpleNamespace(default_root_state=torch.zeros(8, 13), default_joint_pos=torch.zeros(8, 12)),
+            data=SimpleNamespace(
+                default_root_state=torch.zeros(8, 13),
+                default_joint_pos=torch.zeros(8, 12),
+                soft_joint_pos_limits=runtime.dof_pos_limits.unsqueeze(0).repeat(8, 1, 1),
+                soft_joint_vel_limits=torch.full((8, 12), 30.0),
+            ),
             actuators={"legs": actuator},
             write_root_pose_to_sim=Mock(),
             write_root_velocity_to_sim=Mock(),
@@ -211,6 +216,15 @@ class Dog03MotorDynamicsTest(unittest.TestCase):
         torch.testing.assert_close(actuator.coulomb_friction[ids, -1], torch.full((2,), 0.3))
         self.assertEqual(actuator.coulomb_friction[0].sum().item(), 0)
         torch.testing.assert_close(robot.write_joint_state_to_sim.call_args.args[1], torch.full((2, 12), 0.2))
+        for direction, limit_index in ((-1, 0), (1, 1)):
+            runtime.cfg.domain_rand.default_joint_angle_range = [direction * 4.0] * 2
+            runtime.cfg.init_state.reset_dof_scale_range = [2.0, 2.0]
+            runtime.cfg.init_state.reset_dof_velocity_range = [direction * 100.0] * 2
+            reset(env, ids)
+            positions, velocities = robot.write_joint_state_to_sim.call_args.args
+            torch.testing.assert_close(positions, robot.data.soft_joint_pos_limits[ids, :, limit_index])
+            torch.testing.assert_close(velocities, direction * robot.data.soft_joint_vel_limits[ids])
+            torch.testing.assert_close(robot.write_joint_state_to_sim.call_args.kwargs["env_ids"], ids)
         runtime.cfg.env.test = True
         reset(env, ids)
         self.assertEqual(robot.write_joint_state_to_sim.call_args.args[1].sum().item(), 0)
@@ -341,6 +355,62 @@ class Dog03MotorDynamicsTest(unittest.TestCase):
         torch.testing.assert_close(materials[:, :, 1], materials[:, :, 0])
         torch.testing.assert_close(runtime.critic_friction[:, 0], materials[:, 0, 0])
 
+    def test_material_shape_scope_and_shared_bucket_budget(self):
+        randomize, _ = adapter_function("_randomize_startup", "Dog03CyberstarEnv")
+        for per_shape in (False, True):
+            with self.subTest(per_shape=per_shape):
+                config = source_config()["env"]
+                config["domain_rand"]["randomize_material_per_shape"] = per_shape
+                runtime = CyberstarRuntime(128, "cpu", config=config)
+                materials = torch.ones(128, 17, 3)
+                view = SimpleNamespace(
+                    get_masses=lambda: torch.ones(128, 17),
+                    get_coms=lambda: torch.zeros(128, 17, 7),
+                    get_inertias=lambda: torch.eye(3).flatten().repeat(128, 17, 1),
+                    get_material_properties=lambda: materials,
+                    set_masses=Mock(),
+                    set_coms=Mock(),
+                    set_inertias=Mock(),
+                    set_material_properties=Mock(),
+                )
+                robot = SimpleNamespace(root_physx_view=view, find_bodies=lambda name: ([0], [name]))
+                randomize(SimpleNamespace(cyberstar=runtime, num_envs=128, device="cpu", scene={"robot": robot}))
+                self.assertLessEqual(torch.unique(materials.reshape(-1, 3), dim=0).shape[0], 64)
+                if per_shape:
+                    self.assertTrue((materials[:, :, 0].std(dim=1) > 0).all())
+                else:
+                    torch.testing.assert_close(materials, materials[:, :1].expand_as(materials))
+                self.assertTrue((materials[:, :, 0] >= 0.6).all())
+                self.assertTrue((materials[:, :, 0] <= 1.3).all())
+                self.assertTrue((materials[:, :, 1] <= materials[:, :, 0]).all())
+                self.assertTrue((materials[:, :, 2] > 0).any())
+                torch.testing.assert_close(runtime.critic_friction, materials[:, :, 0].mean(dim=1, keepdim=True))
+                view.set_material_properties.assert_called_once()
+
+    def test_per_shape_material_switch_does_not_enable_disabled_coefficients(self):
+        config = flat_config()
+        config["domain_rand"].update(randomize_material_per_shape=True, randomize_restitution=True)
+        runtime = CyberstarRuntime(16, "cpu", config=config)
+        materials = torch.ones(16, 17, 3)
+        view = SimpleNamespace(
+            get_masses=lambda: torch.ones(16, 17),
+            get_coms=lambda: torch.zeros(16, 17, 7),
+            get_inertias=lambda: torch.eye(3).flatten().repeat(16, 17, 1),
+            get_material_properties=lambda: materials,
+            set_masses=Mock(),
+            set_coms=Mock(),
+            set_inertias=Mock(),
+            set_material_properties=Mock(),
+        )
+        robot = SimpleNamespace(root_physx_view=view, find_bodies=lambda name: ([0], [name]))
+        randomize, _ = adapter_function("_randomize_startup", "Dog03CyberstarEnv")
+        randomize(SimpleNamespace(cyberstar=runtime, num_envs=16, device="cpu", scene={"robot": robot}))
+        torch.testing.assert_close(materials[:, :, :2], torch.ones(16, 17, 2))
+        self.assertTrue((materials[:, :, 2].std(dim=1) > 0).all())
+        self.assertTrue((materials[:, :, 2] >= 0).all())
+        self.assertTrue((materials[:, :, 2] <= 0.5).all())
+        torch.testing.assert_close(runtime.critic_friction, torch.ones(16, 1))
+
     def test_push_safety_uses_ground_clearance_not_world_height(self):
         runtime = CyberstarRuntime(4, "cpu")
         runtime.episode_length_buf[:] = runtime.next_push_steps
@@ -406,6 +476,61 @@ class Dog03MotorDynamicsTest(unittest.TestCase):
         self.assertEqual(env.scene.height_scanner_base.update_period, 0.03)
         self.assertEqual(env.episode_length_s, 12.0)
         self.assertEqual(env.actions.joint_pos.scale, 0.15)
+        self.assertEqual(env.scene.terrain.physics_material.restitution_combine_mode, "multiply")
+        self.assertEqual(env.scene.terrain.physics_material.restitution, 1.0)
+
+    def test_playback_flag_disables_noise_and_pushes_without_cli_overrides(self):
+        load, namespace = adapter_function("load_managers", "Dog03CyberstarEnv")
+        namespace["super"] = lambda: SimpleNamespace(load_managers=Mock())
+        namespace["Ji22RewardManager"] = Mock()
+        for playback in (False, True):
+            with self.subTest(playback=playback):
+                config = source_config()["env"]
+                joint_names = [
+                    f"{leg}_{joint}_joint" for leg in ("FL", "FR", "RL", "RR") for joint in ("hip", "thigh", "calf")
+                ]
+                body_names = config["asset"]["body_names"]
+                feet = [body_names.index(f"{leg}_FOOT") for leg in ("FL", "FR", "RL", "RR")]
+                base = body_names.index("base_link")
+                penalty = [index for index, name in enumerate(body_names) if name.endswith(("_thigh", "_calf"))]
+                sensor = SimpleNamespace(
+                    find_bodies=Mock(
+                        side_effect=(
+                            (list(range(len(body_names))), body_names),
+                            (feet, []),
+                            ([base], ["base_link"]),
+                            (penalty, []),
+                        )
+                    )
+                )
+                robot = SimpleNamespace(
+                    body_names=body_names,
+                    find_joints=Mock(return_value=(list(range(12)), joint_names)),
+                    find_bodies=Mock(return_value=(feet, [])),
+                    actuators={
+                        "legs": SimpleNamespace(joint_names=joint_names, effort_limit=torch.full((4, 12), 30.0))
+                    },
+                    data=SimpleNamespace(soft_joint_pos_limits=torch.tensor(config["asset"]["joint_limits"])[None]),
+                )
+                env = SimpleNamespace(
+                    num_envs=4,
+                    device="cpu",
+                    step_dt=0.02,
+                    cfg=SimpleNamespace(cyberstar_config=config, cyberstar_play=playback, rewards={}),
+                    runtime_type=CyberstarRuntime,
+                    scene={"robot": robot, "contact_forces": sensor},
+                    _write_cyberstar_velocity=Mock(),
+                    _terrain_height_at=Mock(),
+                    _configure_cyberstar_terrain=Mock(),
+                    _sync_cyberstar=Mock(),
+                    _randomize_startup=Mock(),
+                )
+                load(env)
+                self.assertEqual(env.cyberstar.cfg.env.test, playback)
+                self.assertEqual(env.cyberstar.add_noise, not playback)
+                self.assertEqual(env.cyberstar.cfg.domain_rand.push_robots, not playback)
+                self.assertTrue(config["noise"]["add_noise"])
+                self.assertTrue(config["domain_rand"]["push_robots"])
 
     def test_randomized_push_schedule_bounds_resampling_and_partial_reset(self):
         config = source_config()["env"]
@@ -441,6 +566,7 @@ class Dog03MotorDynamicsTest(unittest.TestCase):
                 "randomize_friction",
                 "randomize_dynamic_friction",
                 "randomize_restitution",
+                "randomize_material_per_shape",
             ),
             "randomize_rigid_body_mass_base": ("randomize_base_mass", "recompute_inertia"),
             "randomize_rigid_body_mass_others": ("randomize_link_mass", "recompute_inertia"),
@@ -457,7 +583,12 @@ class Dog03MotorDynamicsTest(unittest.TestCase):
             keys = config["domain_rand"].keys() | config["init_state"].keys()
             for event, fields in coverage.items():
                 self.assertTrue(set(fields) <= keys, (filename, event))
-        for path in (VELOCITY / "config/quadruped/atdog").rglob("*env_cfg.py"):
+        paths = [
+            path
+            for family in ("quadruped/atdog", "wheeled/atdog", "wheeled/atdog_arm")
+            for path in (VELOCITY / "config" / family).rglob("*env_cfg.py")
+        ]
+        for path in paths:
             for node in ast.walk(ast.parse(path.read_text())):
                 if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Attribute):
                     if ast.unparse(node.value) == "self.events":

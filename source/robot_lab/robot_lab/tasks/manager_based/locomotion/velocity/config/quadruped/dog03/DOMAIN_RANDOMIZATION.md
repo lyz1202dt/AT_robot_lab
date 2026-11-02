@@ -77,13 +77,13 @@ b_actual = max(0, b_nominal + uniform(viscous_offset_range))
 
 ## 从当前 ATDog 源码逐项复核
 
-复核范围是当前仓库 `assets/atdog.py`、ATDog 全部环境配置、其共同父类
+复核范围是当前仓库 `assets/atdog.py`、ATDog 四足/轮足及带机械臂的全部环境配置、其共同父类
 `velocity_env_cfg.py`、`mdp/events.py`，以及实际 Isaac Lab 执行器实现。
 不把注释掉的事件当成启用项，也不把固定资产属性当成随机事件。
 
 | 当前 ATDog 生效项 | 03dog 282 对应配置 / 实现 | 时机 |
 | --- | --- | --- |
-| 接触静摩擦、动摩擦、恢复系数 | `randomize_friction` / `friction_range`、`randomize_dynamic_friction`、`randomize_restitution` | Startup |
+| 接触静摩擦、动摩擦、恢复系数，逐碰撞形状分配材质 | `randomize_friction` / `friction_range`、`randomize_dynamic_friction`、`randomize_restitution`、`randomize_material_per_shape` | Startup |
 | 机身附加质量 | `randomize_base_mass`、`added_mass_range` | Startup |
 | 非机身连杆质量缩放 | `randomize_link_mass`、`link_mass_scale_range`；排除机身，避免叠加机身附加质量随机化 | Startup |
 | 质量变化后同步惯量，ATDog 的 `recompute_inertia=True` | 新接入 `recompute_inertia`：按质量比缩放完整惯量张量；之后再叠加原有独立惯量随机倍率 | Startup |
@@ -103,6 +103,23 @@ ATDog 资产当前有固定关节摩擦，但没有独立的电机摩擦参数�
 ATDog 资产注释把 `damping` 称为“黏性摩擦”，但 `DelayedPDActuator` 的实现把它用于 PD 速度误差反馈，不能据此替代机械摩擦模型。
 ATDog 的独立惯量事件是注释掉的；实际联动来自质量事件的 `recompute_inertia=True`。
 
+### 材质随机化的实际覆盖
+
+ATDog 调用的 Isaac Lab `randomize_rigid_body_material` 是从 64 个完整材质三元组中，
+为每个环境的每个碰撞形状独立分配一个材质。03dog 此前虽已有三个系数的随机开关，
+但同一环境内所有形状共用一组参数，缺少这种接触差异。
+
+- 两份 JSON 新增 `domain_rand.randomize_material_per_shape=true`，补齐逐形状采样；
+  Flat-282 随其他 `randomize_*` 开关自动关闭。
+- 三个系数先组成共用的 64 个材质桶，再分配给碰撞形状；不是将三套 64 个系数任意组合，
+  避免并行环境和碰撞形状增多时产生过量不同材质。
+- 静摩擦、动摩擦和恢复系数仍由各自开关控制；逐形状开关本身不会启用任何系数随机化。
+  仅关闭逐形状开关，可恢复每个环境共用材质的模式。
+- `critic_friction` 使用该环境各碰撞形状静摩擦的均值，仍占原来的一维，不改变 491 维 critic。
+- 地面继承的 `restitution_combine_mode="multiply"` 此前与地面恢复系数 0 组合，
+  导致机器人采样的恢复系数全部失效。现在地面恢复系数设为乘法中性值 1，
+  实际机器人—地面恢复系数由机器人采样值决定；关闭随机化时机器人系数仍为 0。
+
 ### 刻意保留的差异
 
 - 不照搬不同机型的质量、COM、增益和推扰强度；03dog 已有数值保持原样，新增摩擦与速度占位均为零。
@@ -121,6 +138,10 @@ ATDog 的独立惯量事件是注释掉的；实际联动来自质量事件的 `
   现在连杆质量和连杆 COM 均排除 `base_link`；机身只由各自独立开关控制。
 - 动摩擦采样后取 `min(dynamic, static)`，避免默认随机区间重叠时产生动摩擦大于静摩擦的材质。
   对不相容的自定义区间，也以静摩擦作为动摩擦上限。
+- 重置关节位置与速度在写入仿真前按资产软限位裁剪，避免扩大角度偏移或速度范围后直接写入越界状态。
+  正常默认范围不受影响，局部重置仍只作用于所选环境。
+- `cyberstar_play=true` 在环境内同时关闭观测噪声与定时推扰，不再只依赖 RSL-RL 回放脚本修改配置。
+  通过其他入口直接构造回放环境时也生效；原有 XY 放置和楼梯航向采样仍保留，不承诺全确定性回放。
 - 推扰偏移旧默认值 `[0, 0]` 虽有开关却没有实际周期变化，现默认启用非退化区间；固定周期按控制步向上取整且至少为一步。
 - 鲁棒平地推扰安全门改用局部地面相对高度，而非世界 Z，避免高地形上的正常站姿被误判。
   只对本次到期的环境查询地形，不额外扫描所有并行环境。
@@ -137,6 +158,12 @@ ATDog 的独立惯量事件是注释掉的；实际联动来自质量事件的 `
 
 `tests/test_dog03_motor_dynamics.py` 验证 JSON 增益、关节匹配、限幅与摩擦顺序、零默认值、
 随机范围、回放/关闭开关、局部重置关节顺序、质量-惯量联动、长延迟和随机推扰定时器，
-并覆盖机身/连杆隔离、静/动摩擦一致性、地形相对推扰安全门、JSON 仿真时序和楼梯受阻净空奖励。
-其中 ATDog 事件清单直接从当前 AST 收集；新增未覆盖的事件或覆盖键缺失会使测试失败。
+并覆盖机身/连杆隔离、静/动摩擦一致性、逐形状材质差异、完整材质桶数量、地面恢复系数、
+重置软限位、环境内回放开关、地形相对推扰安全门、JSON 仿真时序和楼梯受阻净空奖励。
+其中 ATDog 四足/轮足/带臂配置的事件清单直接从当前 AST 收集；新增未覆盖的事件或覆盖键缺失会使测试失败。
 原有 03dog 测试继续检查 282 / 491 维观测与 HIM 检查点契约。
+
+本次 48 项 03dog CPU 回归全部通过，包含完整尺寸的 HIM/PPO 更新。
+另在 Isaac Lab 2.3.2 / Isaac Sim 的 headless GPU 仿真中，对 Flat-282、DomainRand 和楼梯
+分别使用 4 个环境做短步冒烟检查，核对实际 PhysX 材质、静/动摩擦关系、64 桶上限、
+critic 摩擦均值及观测/奖励有限性。短步验证不代表策略已收敛或通过实机验证。

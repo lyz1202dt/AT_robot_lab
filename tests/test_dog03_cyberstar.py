@@ -102,7 +102,7 @@ class Dog03CyberstarTest(unittest.TestCase):
                 self.assertGreater(runtime.critic_base_mass_offset.abs().sum().item(), 0)
                 self.assertGreater(runtime.critic_base_com_offset.abs().sum().item(), 0)
                 self.assertGreater((runtime.critic_friction - 1).abs().sum().item(), 0)
-                torch.testing.assert_close(materials[:, 0, 0], runtime.critic_friction[:, 0])
+                torch.testing.assert_close(materials[:, :, 0].mean(dim=1), runtime.critic_friction[:, 0])
                 self.assertTrue((materials[:, :, 1] >= 0.3).all())
                 self.assertTrue((materials[:, :, 1] <= 0.8).all())
                 self.assertTrue((materials[:, :, 1] <= materials[:, :, 0]).all())

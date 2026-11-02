@@ -171,6 +171,10 @@ def reset_robot(env, env_ids):
     joint_velocity = torch.zeros_like(q)
     if not runtime.cfg.env.test:
         joint_velocity.uniform_(*getattr(runtime.cfg.init_state, "reset_dof_velocity_range", (0.0, 0.0)))
+    position_limits = robot.data.soft_joint_pos_limits[ids]
+    q.clamp_(position_limits[..., 0], position_limits[..., 1])
+    velocity_limits = robot.data.soft_joint_vel_limits[ids]
+    joint_velocity.clamp_(-velocity_limits, velocity_limits)
     robot.write_root_pose_to_sim(state[:, :7], env_ids=ids)
     robot.write_root_velocity_to_sim(state[:, 7:13], env_ids=ids)
     robot.write_joint_state_to_sim(q, joint_velocity, env_ids=ids)
@@ -205,6 +209,9 @@ class Dog03CyberstarEnv(ManagerBasedRLEnv):
     def load_managers(self):
         self.cyberstar = self.runtime_type(self.num_envs, self.device, self.step_dt, self.cfg.cyberstar_config)
         self.cyberstar.cfg.env.test = self.cfg.cyberstar_play
+        if self.cfg.cyberstar_play:
+            self.cyberstar.add_noise = False
+            self.cyberstar.cfg.domain_rand.push_robots = False
         self._cyberstar_obs_step = -1
         robot = self.scene["robot"]
         self._joint_ids, _ = robot.find_joints(self.cyberstar.dof_names, preserve_order=True)
@@ -342,25 +349,22 @@ class Dog03CyberstarEnv(ManagerBasedRLEnv):
         view.set_coms(coms, ids)
         runtime.critic_base_mass_offset[:] = (masses[:, base] - nominal_base_mass)[:, None].to(self.device)
         runtime.critic_base_com_offset[:] = (coms[:, base, :3] - nominal_base_com).to(self.device)
-        # One coefficient per environment and all its collision shapes, as in source.
-        if dr.randomize_friction:
-            buckets = torch.empty(64).uniform_(*dr.friction_range)
-            friction = buckets[torch.randint(0, 64, (self.num_envs,))]
-        else:
-            friction = torch.ones(self.num_envs)
         materials = view.get_material_properties()
-        materials[:, :, :2] = friction[:, None, None]
+        buckets = torch.ones(64, 3, dtype=materials.dtype, device=materials.device)
+        if dr.randomize_friction:
+            buckets[:, 0].uniform_(*dr.friction_range)
+        buckets[:, 1] = buckets[:, 0]
         if getattr(dr, "randomize_dynamic_friction", False):
-            buckets = torch.empty(64).uniform_(*dr.dynamic_friction_range)
-            materials[:, :, 1] = buckets[torch.randint(0, 64, (self.num_envs,))][:, None]
-        materials[:, :, 1] = torch.minimum(materials[:, :, 1], materials[:, :, 0])
+            buckets[:, 1].uniform_(*dr.dynamic_friction_range)
+        buckets[:, 1] = torch.minimum(buckets[:, 1], buckets[:, 0])
+        buckets[:, 2] = 0
         if getattr(dr, "randomize_restitution", False):
-            buckets = torch.empty(64).uniform_(*dr.restitution_range)
-            materials[:, :, 2] = buckets[torch.randint(0, 64, (self.num_envs,))][:, None]
-        else:
-            materials[:, :, 2] = 0
+            buckets[:, 2].uniform_(*dr.restitution_range)
+        shape_count = materials.shape[1] if getattr(dr, "randomize_material_per_shape", False) else 1
+        bucket_ids = torch.randint(0, len(buckets), (self.num_envs, shape_count), device=materials.device)
+        materials[:] = buckets[bucket_ids]
         view.set_material_properties(materials, ids)
-        runtime.critic_friction[:] = friction[:, None].to(self.device)
+        runtime.critic_friction[:] = materials[:, :, 0].mean(dim=1, keepdim=True).to(self.device)
 
     def _compute_cyberstar_observations(self):
         if self._cyberstar_obs_step != self.common_step_counter:

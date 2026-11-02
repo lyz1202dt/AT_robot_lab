@@ -110,7 +110,8 @@ class Dog03CyberstarDomainRandEnvCfg(Dog03Flat282EnvCfg):
         )
         self.scene.terrain.physics_material.static_friction = 1.0
         self.scene.terrain.physics_material.dynamic_friction = 1.0
-        self.scene.terrain.physics_material.restitution = 0.0
+        self.scene.terrain.physics_material.restitution_combine_mode = "multiply"
+        self.scene.terrain.physics_material.restitution = 1.0
         # One existing ray caster supplies a shared terrain mesh for exact arbitrary-point scans.
         self.scene.height_scanner_base.prim_path = "{ENV_REGEX_NS}/Robot/base_link"
         self.scene.height_scanner_base.update_period = self.sim.dt * self.decimation

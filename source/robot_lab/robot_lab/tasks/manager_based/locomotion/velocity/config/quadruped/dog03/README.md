@@ -99,6 +99,7 @@ The following ATDog randomizations are also implemented in the Cyberstar adapter
 | --- | --- | --- |
 | Independent dynamic friction | 0.3–0.8 (static friction keeps its existing range) | Startup, 64 buckets |
 | Restitution | 0–0.5 | Startup, 64 buckets |
+| Per-collision-shape material assignment | Existing coefficient ranges | Startup, shared pool of 64 complete materials |
 | Base external force / torque | Each axis ±10 N / ±10 N·m, local body frame | Reset, held until the next reset (same as ATDog) |
 | Reset height / roll / pitch / yaw | 0–0.02 m / ±0.05 / ±0.05 / ±0.1 rad | Reset, composed with the existing spawn pose |
 
@@ -110,6 +111,13 @@ ATDog settings onto a different robot. Each addition has a separate
 `cyberstar/stairs_config.json`. Flat-282 disables all these switches; playback
 (`cyberstar_play`) skips the added randomizations and clears external wrenches.
 Actor and critic dimensions, observation ordering and HIM network sizes are unchanged.
+Material assignment now follows ATDog's per-collision-shape sampling; disable
+`randomize_material_per_shape` to share one material within each environment.
+The existing one-dimensional critic friction input holds the mean static friction.
+Ground restitution is the multiplicative neutral value 1, so randomized robot
+restitution actually affects contacts; disabling it still gives zero restitution.
+Joint reset states are clipped to asset soft limits. Playback disables observation
+noise and pushes inside the environment, including callers outside the RSL-RL script.
 
 PD gains now come from `env.control.stiffness` and `env.control.damping` in JSON,
 including exact-joint or full-match regex overrides. The identified passive motor
