@@ -320,6 +320,8 @@
       }
     },
     "domain_rand": {
+      "randomize_motor_delay": true,
+      "motor_delay_steps": [1, 2],
       "randomize_joint_friction": true,
       "joint_coulomb_friction_offset_range": [0.0, 0.0],
       "joint_viscous_friction_offset_range": [0.0, 0.0],

@@ -208,8 +208,8 @@ class Dog03CyberstarEnv(ManagerBasedRLEnv):
 
     def load_managers(self):
         self.cyberstar = self.runtime_type(self.num_envs, self.device, self.step_dt, self.cfg.cyberstar_config)
-        self.cyberstar.cfg.env.test = self.cfg.cyberstar_play
-        if self.cfg.cyberstar_play:
+        self.cyberstar.cfg.env.test = self.cyberstar.cfg.env.test or self.cfg.cyberstar_play
+        if self.cyberstar.cfg.env.test:
             self.cyberstar.add_noise = False
             self.cyberstar.cfg.domain_rand.push_robots = False
         self._cyberstar_obs_step = -1
@@ -291,8 +291,7 @@ class Dog03CyberstarEnv(ManagerBasedRLEnv):
 
     def _randomize_startup(self):
         runtime, robot = self.cyberstar, self.scene["robot"]
-        if runtime.cfg.env.test:
-            return
+        enabled = not runtime.cfg.env.test
         view = robot.root_physx_view
         masses, coms = view.get_masses(), view.get_coms()
         base = robot.find_bodies("base_link")[0][0]
@@ -300,26 +299,28 @@ class Dog03CyberstarEnv(ManagerBasedRLEnv):
         nominal_masses = masses.clone()
         nominal_base_mass = masses[:, base].clone()
         nominal_base_com = coms[:, base, :3].clone()
-        if getattr(dr, "randomize_link_mass", False):
+        if enabled and getattr(dr, "randomize_link_mass", False):
             lower, upper = dr.link_mass_scale_range
             if not 0 < lower <= upper:
                 raise ValueError("link_mass_scale_range must be positive and ordered")
             scales = torch.empty_like(masses).uniform_(lower, upper)
             scales[:, base] = 1.0
             masses *= scales
-        if getattr(dr, "randomize_link_com", False):
+        if enabled and getattr(dr, "randomize_link_com", False):
             for axis, name in enumerate(("x", "y", "z")):
                 offsets = torch.empty_like(masses).uniform_(*getattr(dr.link_com_range, name))
                 offsets[:, base] = 0.0
                 coms[:, :, axis] += offsets
         mass = (
             torch.empty(self.num_envs).uniform_(*dr.added_mass_range)
-            if dr.randomize_base_mass
+            if enabled and dr.randomize_base_mass
             else torch.zeros(self.num_envs)
         )
         com = torch.stack(
             [
-                torch.empty(self.num_envs).uniform_(*limits) if dr.randomize_com else torch.zeros(self.num_envs)
+                torch.empty(self.num_envs).uniform_(*limits)
+                if enabled and dr.randomize_com
+                else torch.zeros(self.num_envs)
                 for limits in (
                     runtime.cfg.domain_rand.com_range_x,
                     runtime.cfg.domain_rand.com_range_y,
@@ -336,7 +337,7 @@ class Dog03CyberstarEnv(ManagerBasedRLEnv):
         coms[:, base, :3] += com
         ids = torch.arange(self.num_envs, dtype=torch.int32)
         view.set_masses(masses, ids)
-        if getattr(dr, "recompute_inertia", True) or getattr(dr, "randomize_link_inertia", False):
+        if enabled and (getattr(dr, "recompute_inertia", True) or getattr(dr, "randomize_link_inertia", False)):
             inertias = view.get_inertias()
             if getattr(dr, "recompute_inertia", True):
                 inertias *= (masses / nominal_masses).unsqueeze(-1)
@@ -351,14 +352,14 @@ class Dog03CyberstarEnv(ManagerBasedRLEnv):
         runtime.critic_base_com_offset[:] = (coms[:, base, :3] - nominal_base_com).to(self.device)
         materials = view.get_material_properties()
         buckets = torch.ones(64, 3, dtype=materials.dtype, device=materials.device)
-        if dr.randomize_friction:
+        if enabled and dr.randomize_friction:
             buckets[:, 0].uniform_(*dr.friction_range)
         buckets[:, 1] = buckets[:, 0]
-        if getattr(dr, "randomize_dynamic_friction", False):
+        if enabled and getattr(dr, "randomize_dynamic_friction", False):
             buckets[:, 1].uniform_(*dr.dynamic_friction_range)
         buckets[:, 1] = torch.minimum(buckets[:, 1], buckets[:, 0])
         buckets[:, 2] = 0
-        if getattr(dr, "randomize_restitution", False):
+        if enabled and getattr(dr, "randomize_restitution", False):
             buckets[:, 2].uniform_(*dr.restitution_range)
         shape_count = materials.shape[1] if getattr(dr, "randomize_material_per_shape", False) else 1
         bucket_ids = torch.randint(0, len(buckets), (self.num_envs, shape_count), device=materials.device)

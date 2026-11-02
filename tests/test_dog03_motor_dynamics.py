@@ -271,6 +271,145 @@ class Dog03MotorDynamicsTest(unittest.TestCase):
         runtime.reset(torch.tensor([1]))
         self.assertEqual(runtime.action_history[1].abs().sum().item(), 0)
 
+    def test_atdog_physics_step_motor_delay_is_enabled_in_both_robust_stages(self):
+        tree = ast.parse((ROOT / "source/robot_lab/robot_lab/assets/atdog.py").read_text())
+        delays = set()
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "DelayedPDActuatorCfg"
+            ):
+                parameters = {
+                    keyword.arg: ast.literal_eval(keyword.value)
+                    for keyword in node.keywords
+                    if keyword.arg in ("min_delay", "max_delay")
+                }
+                delays.add((parameters["min_delay"], parameters["max_delay"]))
+        self.assertEqual(delays, {(1, 2)})
+        for config in (source_config()["env"], stairs_config()["env"]):
+            self.assertTrue(config["domain_rand"]["randomize_motor_delay"])
+            self.assertEqual(config["domain_rand"]["motor_delay_steps"], [1, 2])
+
+    def test_motor_delay_sampling_and_partial_reset(self):
+        runtime = CyberstarRuntime(64, "cpu")
+        runtime.reset(torch.arange(64))
+        self.assertTrue((runtime.motor_delay >= 1).all())
+        self.assertTrue((runtime.motor_delay <= 2).all())
+        self.assertTrue((runtime.motor_delay.float().std(dim=1) > 0).any())
+        self.assertTrue((runtime.motor_delay.float().std(dim=0) > 0).all())
+        previous = runtime.motor_delay.clone()
+        runtime.motor_target_history[:] = 7
+        runtime.motor_history_steps[:] = 2
+        ids = torch.tensor([1, 3])
+        runtime.reset(ids)
+        keep = torch.ones(64, dtype=torch.bool)
+        keep[ids] = False
+        torch.testing.assert_close(runtime.motor_delay[keep], previous[keep])
+        self.assertEqual(runtime.motor_target_history[ids].sum().item(), 0)
+        self.assertEqual(runtime.motor_history_steps[ids].sum().item(), 0)
+        self.assertTrue((runtime.motor_target_history[keep] == 7).all())
+        self.assertTrue((runtime.motor_history_steps[keep] == 2).all())
+        for test_mode, enabled in ((True, True), (False, False)):
+            runtime.cfg.env.test = test_mode
+            runtime.cfg.domain_rand.randomize_motor_delay = enabled
+            runtime.reset(ids)
+            self.assertEqual(runtime.motor_delay[ids].sum().item(), 0)
+            torch.testing.assert_close(runtime.motor_delay[keep], previous[keep])
+        flat = CyberstarRuntime(4, "cpu", config=flat_config())
+        flat.reset(torch.arange(4))
+        self.assertEqual(flat.motor_delay.sum().item(), 0)
+
+    def test_motor_delay_delays_setpoints_not_pd_feedback_and_warm_starts(self):
+        config = flat_config()
+        config["domain_rand"].update(randomize_motor_delay=True, motor_delay_steps=[0, 4])
+        runtime = CyberstarRuntime(4, "cpu", config=config)
+        runtime.motor_delay[:] = torch.arange(12) % 5
+        targets = torch.arange(12).float().expand(4, -1) / 100
+        limits = torch.full_like(targets, 100)
+        for step in range(7):
+            positions = torch.full_like(targets, step / 100)
+            velocities = torch.full_like(targets, step / 20)
+            effective_steps = (step - runtime.motor_delay).clamp_min(0)
+            expected = runtime.p_gains * (targets + effective_steps / 10 - positions) - runtime.d_gains * velocities
+            actual = runtime.compute_motor_torques(targets + step / 10, positions, velocities, limits)
+            torch.testing.assert_close(actual, expected)
+        ids = torch.tensor([1, 3])
+        runtime.reset(ids)
+        previous_history = runtime.motor_target_history[[0, 2]].clone()
+        positions = torch.zeros_like(targets)
+        actual = runtime.compute_motor_torques(targets + 2, positions, positions, limits)
+        torch.testing.assert_close(actual[ids], runtime.p_gains * (targets[ids] + 2))
+        torch.testing.assert_close(runtime.motor_target_history[[0, 2], 1:], previous_history[:, :-1])
+
+    def test_motor_delay_advances_on_each_physics_step_not_each_policy_step(self):
+        config = flat_config()
+        config["domain_rand"].update(randomize_motor_delay=True, motor_delay_steps=[1, 1])
+        runtime = CyberstarRuntime(4, "cpu", config=config)
+        runtime.reset(torch.arange(4))
+        zeros = torch.zeros(4, 12)
+        limits = torch.full_like(zeros, 100)
+        runtime.compute_motor_torques(zeros, zeros, zeros, limits)
+        runtime.process_actions(torch.ones_like(zeros))
+        torch.testing.assert_close(runtime.compute_motor_torques(runtime.actions, zeros, zeros, limits), zeros)
+        torch.testing.assert_close(
+            runtime.compute_motor_torques(runtime.actions, zeros, zeros, limits), runtime.p_gains.expand_as(zeros)
+        )
+        self.assertTrue((runtime.action_history[:, 1] == 0).all())
+
+    def test_motor_delay_range_validation(self):
+        for delay_range in ((-1, 2), (2, 1), (0, 1.5), (True, 2)):
+            with self.subTest(delay_range=delay_range):
+                config = flat_config()
+                config["domain_rand"]["motor_delay_steps"] = delay_range
+                with self.assertRaisesRegex(ValueError, "motor_delay_steps"):
+                    CyberstarRuntime(4, "cpu", config=config)
+
+    def test_motor_delay_disabled_and_legacy_configs_leave_targets_unchanged(self):
+        for test_mode, legacy in ((False, False), (True, False), (False, True)):
+            with self.subTest(test_mode=test_mode, legacy=legacy):
+                config = flat_config()
+                config["env"]["test"] = test_mode
+                if test_mode:
+                    config["domain_rand"]["randomize_motor_delay"] = True
+                if legacy:
+                    del config["domain_rand"]["randomize_motor_delay"]
+                    del config["domain_rand"]["motor_delay_steps"]
+                runtime = CyberstarRuntime(4, "cpu", config=config)
+                for _ in range(3):
+                    targets = torch.rand(4, 12)
+                    torch.testing.assert_close(runtime.delay_motor_targets(targets), targets)
+                self.assertEqual(runtime.motor_delay.sum().item(), 0)
+                self.assertEqual(runtime.motor_history_steps.sum().item(), 0)
+
+    def test_playback_applies_nominal_materials_without_randomizing_dynamics(self):
+        runtime = CyberstarRuntime(8, "cpu")
+        runtime.cfg.env.test = True
+        masses = torch.full((8, 3), 2.0)
+        coms = torch.full((8, 3, 7), 0.01)
+        inertias = torch.eye(3).flatten().repeat(8, 3, 1)
+        materials = torch.full((8, 5, 3), 0.2)
+        view = SimpleNamespace(
+            get_masses=lambda: masses,
+            get_coms=lambda: coms,
+            get_inertias=lambda: inertias,
+            get_material_properties=lambda: materials,
+            set_masses=Mock(),
+            set_coms=Mock(),
+            set_inertias=Mock(),
+            set_material_properties=Mock(),
+        )
+        robot = SimpleNamespace(root_physx_view=view, find_bodies=lambda name: ([0], [name]))
+        randomize, _ = adapter_function("_randomize_startup", "Dog03CyberstarEnv")
+        randomize(SimpleNamespace(cyberstar=runtime, num_envs=8, device="cpu", scene={"robot": robot}))
+        torch.testing.assert_close(masses, torch.full((8, 3), 2.0))
+        torch.testing.assert_close(coms, torch.full((8, 3, 7), 0.01))
+        torch.testing.assert_close(inertias, torch.eye(3).flatten().repeat(8, 3, 1))
+        torch.testing.assert_close(materials[:, :, :2], torch.ones(8, 5, 2))
+        self.assertEqual(materials[:, :, 2].sum().item(), 0)
+        torch.testing.assert_close(runtime.critic_friction, materials[:, :, 0].mean(dim=1, keepdim=True))
+        view.set_material_properties.assert_called_once()
+
     def test_link_randomization_does_not_change_base_mass_or_com(self):
         config = flat_config()
         config["domain_rand"].update(
@@ -483,9 +622,10 @@ class Dog03MotorDynamicsTest(unittest.TestCase):
         load, namespace = adapter_function("load_managers", "Dog03CyberstarEnv")
         namespace["super"] = lambda: SimpleNamespace(load_managers=Mock())
         namespace["Ji22RewardManager"] = Mock()
-        for playback in (False, True):
-            with self.subTest(playback=playback):
+        for playback, config_test_mode in ((False, False), (True, False), (False, True), (True, True)):
+            with self.subTest(playback=playback, config_test_mode=config_test_mode):
                 config = source_config()["env"]
+                config["env"]["test"] = config_test_mode
                 joint_names = [
                     f"{leg}_{joint}_joint" for leg in ("FL", "FR", "RL", "RR") for joint in ("hip", "thigh", "calf")
                 ]
@@ -526,9 +666,9 @@ class Dog03MotorDynamicsTest(unittest.TestCase):
                     _randomize_startup=Mock(),
                 )
                 load(env)
-                self.assertEqual(env.cyberstar.cfg.env.test, playback)
-                self.assertEqual(env.cyberstar.add_noise, not playback)
-                self.assertEqual(env.cyberstar.cfg.domain_rand.push_robots, not playback)
+                self.assertEqual(env.cyberstar.cfg.env.test, playback or config_test_mode)
+                self.assertEqual(env.cyberstar.add_noise, not (playback or config_test_mode))
+                self.assertEqual(env.cyberstar.cfg.domain_rand.push_robots, not (playback or config_test_mode))
                 self.assertTrue(config["noise"]["add_noise"])
                 self.assertTrue(config["domain_rand"]["push_robots"])
 

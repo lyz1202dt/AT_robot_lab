@@ -102,6 +102,7 @@ The following ATDog randomizations are also implemented in the Cyberstar adapter
 | Per-collision-shape material assignment | Existing coefficient ranges | Startup, shared pool of 64 complete materials |
 | Base external force / torque | Each axis ±10 N / ±10 N·m, local body frame | Reset, held until the next reset (same as ATDog) |
 | Reset height / roll / pitch / yaw | 0–0.02 m / ±0.05 / ±0.05 / ±0.1 rad | Reset, composed with the existing spawn pose |
+| Per-motor setpoint delay | 1–2 physics steps (5–10 ms at the default timestep) | Reset, independently for every environment and joint |
 
 Stairs retain their existing randomized spawn yaw and heading reference; only
 height, roll and pitch are added there. Existing XY placement, reset velocities,
@@ -118,6 +119,18 @@ Ground restitution is the multiplicative neutral value 1, so randomized robot
 restitution actually affects contacts; disabling it still gives zero restitution.
 Joint reset states are clipped to asset soft limits. Playback disables observation
 noise and pushes inside the environment, including callers outside the RSL-RL script.
+JSON `env.test=true` also enables this mode; it is not overridden by
+`cyberstar_play=false`. Test mode still initializes nominal contact materials
+to `(static=1, dynamic=1, restitution=0)` and synchronizes critic friction.
+
+`randomize_motor_delay` and `motor_delay_steps` control the new physics-step
+setpoint delay, not the existing policy-step `randomize_control_delay` and
+`control_delay_steps`. Both delays remain enabled in robust stages: the default
+combined delay is 5/10/25/30 ms. Disable `randomize_control_delay` explicitly if
+only the ATDog-style motor delay is needed. Current PD feedback is not delayed,
+and reset motor history starts from the first valid target, not an absolute zero
+joint angle. The original critic delay slot continues to encode policy-step
+delay; no input dimensions or checkpoint tensor shapes change.
 
 PD gains now come from `env.control.stiffness` and `env.control.damping` in JSON,
 including exact-joint or full-match regex overrides. The identified passive motor

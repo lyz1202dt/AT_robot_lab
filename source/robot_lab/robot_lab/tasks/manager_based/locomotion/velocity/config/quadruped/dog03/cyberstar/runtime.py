@@ -121,6 +121,17 @@ class CyberstarRuntime(Dog03Flat282DomainRandMixin, Dog03Flat282Mixin, Dog03Flat
         if not isinstance(delay_min, int) or not isinstance(delay_max, int) or not 0 <= delay_min <= delay_max:
             raise ValueError("control_delay_steps must be non-negative, ordered integers")
         self.action_history = torch.zeros(num_envs, delay_max + 1, 12, device=device)
+        motor_delay_min, motor_delay_max = getattr(self.cfg.domain_rand, "motor_delay_steps", (0, 0))
+        if (
+            any(isinstance(value, bool) or not isinstance(value, int) for value in (motor_delay_min, motor_delay_max))
+            or not 0 <= motor_delay_min <= motor_delay_max
+        ):
+            raise ValueError("motor_delay_steps must be non-negative, ordered integers")
+        self.motor_delay = torch.zeros(num_envs, 12, device=device, dtype=torch.long)
+        self.motor_target_history = torch.zeros(num_envs, motor_delay_max + 1, 12, device=device)
+        self.motor_history_steps = torch.zeros(num_envs, device=device, dtype=torch.long)
+        self._motor_env_ids = torch.arange(num_envs, device=device).unsqueeze(1)
+        self._motor_joint_ids = torch.arange(12, device=device)
         self.motor_strengths = torch.ones(num_envs, 12, device=device)
         self.default_joint_angle_offsets = self.zeros(12)
         self.kp_scales, self.kd_scales = torch.ones_like(self.motor_strengths), torch.ones_like(self.motor_strengths)
@@ -162,6 +173,7 @@ class CyberstarRuntime(Dog03Flat282DomainRandMixin, Dog03Flat282Mixin, Dog03Flat
         )
         self.reset_idx(torch.arange(num_envs, device=device))
         self.resample_push_schedule(torch.arange(num_envs, device=device))
+        self.reset_motor_delay(torch.arange(num_envs, device=device))
 
     def zeros(self, *dims):
         return torch.zeros(self.num_envs, *dims, device=self.device)
@@ -193,7 +205,26 @@ class CyberstarRuntime(Dog03Flat282DomainRandMixin, Dog03Flat282Mixin, Dog03Flat
                 values += torch.empty_like(values).uniform_(lower, upper)
             target[ids] = values.clamp_min(0)
 
+    def reset_motor_delay(self, ids):
+        config = self.cfg.domain_rand
+        enabled = getattr(config, "randomize_motor_delay", False) and not self.cfg.env.test
+        lower, upper = getattr(config, "motor_delay_steps", (0, 0))
+        self.motor_delay[ids] = torch.randint(lower, upper + 1, (len(ids), 12), device=self.device) if enabled else 0
+        self.motor_target_history[ids] = 0
+        self.motor_history_steps[ids] = 0
+
+    def delay_motor_targets(self, targets):
+        """Delay each motor's setpoint in physics steps, keeping current PD feedback."""
+        if not getattr(self.cfg.domain_rand, "randomize_motor_delay", False) or self.cfg.env.test:
+            return targets
+        self.motor_target_history[:, 1:] = self.motor_target_history[:, :-1].clone()
+        self.motor_target_history[:, 0] = targets
+        delays = torch.minimum(self.motor_delay, self.motor_history_steps[:, None])
+        self.motor_history_steps.add_(1).clamp_(max=self.motor_target_history.shape[1] - 1)
+        return self.motor_target_history[self._motor_env_ids, delays, self._motor_joint_ids]
+
     def compute_motor_torques(self, targets, positions, velocities, limits):
+        targets = self.delay_motor_targets(targets)
         torque = (
             self.p_gains * self.kp_scales * (targets + self.default_joint_angle_offsets - positions)
             - self.d_gains * self.kd_scales * velocities
@@ -223,6 +254,7 @@ class CyberstarRuntime(Dog03Flat282DomainRandMixin, Dog03Flat282Mixin, Dog03Flat
 
     def reset(self, ids):
         self.reset_idx(ids)
+        self.reset_motor_delay(ids)
         for name in (
             "actions",
             "last_actions",
