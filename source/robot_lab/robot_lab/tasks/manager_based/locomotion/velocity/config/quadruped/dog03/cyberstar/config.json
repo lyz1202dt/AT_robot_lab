@@ -334,8 +334,8 @@
       "randomize_restitution": true,
       "restitution_range": [0.0, 0.5],
       "randomize_external_force_torque": true,
-      "external_force_range": [-10.0, 10.0],
-      "external_torque_range": [-10.0, 10.0],
+      "external_force_range": [-20.0, 20.0],
+      "external_torque_range": [-15.0, 15.0],
       "randomize_reset_pose": true,
       "reset_pose_range": {
         "z": [0.0, 0.02],
@@ -576,8 +576,8 @@
       "scales": {
         "action_magnitude": -0.005,
         "action_rate": 0.0,
-        "action_smoothness_1": -0.03,
-        "action_smoothness_2": -0.01,
+        "action_smoothness_1": -0.1,
+        "action_smoothness_2": -0.07,
         "ang_vel_xy": -0.05,
         "base_height": 0.0,
         "capture_excess_steps": 0.0,
