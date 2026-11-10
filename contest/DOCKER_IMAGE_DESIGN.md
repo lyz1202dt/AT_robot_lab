@@ -57,7 +57,7 @@ Compose 定义单个 `robot-lab` 服务，镜像名和容器名都为 `robot-lab
 
 GPU 和图形界面不是写死在主 Compose 文件中的，而由 `container.sh` 在 `docker/.tmp/` 下生成覆盖文件并与主配置一起传给 Compose：
 
-- GPU：脚本检查 NVIDIA 设备节点、`nvidia-smi` 命令及其执行结果；检测到后增加 `devices: ["nvidia.com/gpu=all"]`。`FORCE_GPU=1` 强制添加，`DISABLE_GPU=1` 禁用，禁用优先。宿主机还需要具备让 Docker 解析并提供 `nvidia.com/gpu` 设备的 NVIDIA 容器运行环境。仅能构建镜像不代表 GPU 仿真可运行。
+- GPU：脚本检查 NVIDIA 设备节点、`nvidia-smi` 命令及其执行结果；检测到后通常增加 `devices: ["nvidia.com/gpu=all"]`。若宿主机安装 Docker Snap，则改用 `runtime: nvidia` 和 `gpus` 的 `nvidia.runtime-hook` 驱动，避免 Docker Snap 与 apt 版 NVIDIA Container Toolkit 混用时的 CDI 挂载失败。`FORCE_GPU=1` 强制添加，`DISABLE_GPU=1` 禁用，禁用优先。宿主机仍需配置 NVIDIA 容器运行环境；仅能构建镜像不代表 GPU 仿真可运行。
 - X11：存在 `DISPLAY` 且 `/tmp/.X11-unix` 目录可用时，添加 `DISPLAY`、`TERM`、`QT_X11_NO_MITSHM`、X11 socket 和只读时区挂载；若 `XAUTHORITY` 指向现有文件，还会只读挂载认证文件。启动前尝试通过 `xhost` 授予容器 root 本地访问权限。无 X11 时按无 GUI 模式启动，训练命令可使用 `--headless`。
 
 主 Compose 文件没有单独声明 GPU/X11 配置。因此使用 `container.sh` 启动与直接执行 README 中的基础 `docker compose up`，在 GPU/X11 可用性方面可能不同；若直接用 Compose，需要自行叠加相应配置。

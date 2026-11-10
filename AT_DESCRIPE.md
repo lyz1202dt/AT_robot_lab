@@ -81,7 +81,6 @@ cd /workspace/isaaclab_extension_template
   --load_run=<csdog1_flat_282_run> \
   --checkpoint=<checkpoint.pt>
 
-# CSDog1 楼梯从低到高续训：见下方“CSDog1 楼梯分阶段课程”章节。
 
 /workspace/isaaclab/isaaclab.sh -p /workspace/isaaclab_extension_template/scripts/reinforcement_learning/rsl_rl/train.py \
   --task=RobotLab-Isaac-Velocity-Flat-ATDog-Dog2-v0 \

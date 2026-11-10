@@ -219,6 +219,18 @@ EOF
 }
 
 write_gpu_override() {
+    if has_command snap && snap list docker >/dev/null 2>&1; then
+        cat > "${GPU_OVERRIDE_FILE}" <<EOF
+services:
+  ${SERVICE_NAME}:
+    runtime: nvidia
+    gpus:
+      - driver: nvidia.runtime-hook
+        count: all
+EOF
+        return
+    fi
+
     cat > "${GPU_OVERRIDE_FILE}" <<EOF
 services:
   ${SERVICE_NAME}:
