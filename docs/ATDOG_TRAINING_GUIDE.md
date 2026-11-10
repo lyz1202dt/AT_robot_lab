@@ -4,7 +4,7 @@
 
 AT-DOG2 的训练配置、URDF 和网格已同步自 `AT_rl_sar`。实际 Dog2 使用 `merge_fixed_joints=False` 保留 `.*_foot` 接触刚体；初始机身高度为 0.40 m，腿部默认 thigh 角为 -0.7854 rad。Dog2 特有的高度、姿态、接触和镜像奖励在 `dog2/rewards.py` 中，避免改变 CSDog1 和 03dog 的公共奖励行为。
 
-注意：`AT_DOG4_CFG` 原本也引用 `dog2/urdf/dog2.urdf`，因此本次 URDF/网格替换同样会改变 Dog4 加载的模型；Dog4 自身的任务配置和执行器配置未修改。
+Dog3、Dog3-Arm、Dog4 训练任务及其资产配置已删除；Dog2 的 URDF/网格继续由 Dog2 训练任务使用。原有 Dog3 模型文件仍保留在 `source/robot_lab/data/Robots/atdog/`，不再注册对应训练任务。
 
 在项目根目录运行训练（以粗糙地形为例）：
 

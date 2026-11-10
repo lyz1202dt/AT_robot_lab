@@ -59,9 +59,6 @@
 - `quadruped/unitree_a1`
 - `quadruped/atdog/dog2`
 - `quadruped/atdog/dog2_arm`
-- `quadruped/atdog/dog3`
-- `quadruped/atdog/dog3_arm`
-- `quadruped/atdog/dog4`
 - `wheeled/atdog`
 - `wheeled/atdog_arm`
 
@@ -201,7 +198,7 @@
 
 例如：
 
-- `source/robot_lab/robot_lab/tasks/manager_based/locomotion/velocity/config/quadruped/atdog/dog3/agents/rsl_rl_him_cfg.py`
+- `source/robot_lab/robot_lab/tasks/manager_based/locomotion/velocity/config/quadruped/atdog/dog2_arm/agents/rsl_rl_him_cfg.py`
 
 ### 5.2 注册入口
 
@@ -378,7 +375,7 @@ Please check that the gym registry has the entry point: 'rsl_rl_him_cfg_entry_po
 如果后续继续扩展任务，建议按下面顺序验证：
 
 1. `UnitreeA1 rough`
-2. `ATDog Dog3 rough`
+2. `ATDog Dog2 rough`（使用已注册的 PPO 配置）
 3. `stairs / sand / slope`
 4. `wheeled`
 5. `arm`

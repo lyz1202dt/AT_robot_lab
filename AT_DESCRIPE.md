@@ -18,7 +18,7 @@ RobotLab-Isaac-Velocity-Slope-ATDog-Dog2-v0     --斜坡
 RobotLab-Isaac-Velocity-Bar-ATDog-Dog2-v0       --横杆
 训练说明见 `docs/ATDOG_TRAINING_GUIDE.md`；该版本仅注册 RSL-RL PPO 和 CusRL 配置。
 
-注意：ATDOG已经废弃，请使用ATDOG3
+注意：ATDog Dog3、Dog3-Arm 和 Dog4 训练任务已删除；Dog2 任务仍可使用。
 
 export http_proxy=192.168.2.180:7890
 export https_proxy=192.168.2.180:7890
@@ -101,16 +101,6 @@ cd /workspace/isaaclab_extension_template
   --checkpoint=model_39600.pt 
 
 /workspace/isaaclab/isaaclab.sh -p /workspace/isaaclab_extension_template/scripts/reinforcement_learning/rsl_rl/train.py \
-  --task=RobotLab-Isaac-Velocity-Slope-ATDog-Dog3-v0 \
-  --num_envs=30000 \
-  --max_iterations=5000\
-  --headless \
-  --resume \
-  --load_run=2026-06-13_07-04-36\
-  --checkpoint=model_18400.pt 
-
-
-/workspace/isaaclab/isaaclab.sh -p /workspace/isaaclab_extension_template/scripts/reinforcement_learning/rsl_rl/train.py \
   --task=RobotLab-Isaac-Velocity-Flat-ATDog-Dog_Arm-v0 \
   --num_envs=10000 \
   --max_iterations=2000\
@@ -127,14 +117,6 @@ cd /workspace/isaaclab_extension_template
   --load_run=2026-06-14_11-56-28 \
   --checkpoint=model_41599.pt
 
-/workspace/isaaclab/isaaclab.sh -p /workspace/isaaclab_extension_template/scripts/reinforcement_learning/rsl_rl/train.py \
-  --task=RobotLab-Isaac-Velocity-Slope-ATDog-Dog3-v0 \
-  --num_envs=4000 \
-  --max_iterations=2000\
-  --headless \
-  --resume \
-  --load_run=2026-06-14_00-27-05 \
-  --checkpoint=model_11400.pt
 ```
 
 ## CSDog1 楼梯分阶段课程（从低到高）
@@ -258,13 +240,6 @@ cd /workspace/isaaclab_extension_template
   --num_envs=1\
   --headless
 
-/workspace/isaaclab/isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/play.py \
-  --task=RobotLab-Isaac-Velocity-Rough-ATDog-Dog3-Arm-v0 \
-  --checkpoint=/workspace/isaaclab_extension_template/logs/rsl_rl/atdog_dog3_arm_rough/2026-06-10_14-05-13/model_38986.pt \
-  --num_envs=1\
-  --headless
-
-
 
 /workspace/isaaclab/isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/play.py \
   --task=RobotLab-Isaac-Velocity-Flat-ATDog-Dog2-v0 \
@@ -285,17 +260,10 @@ scp -P 3022 sw@shenweitechnology.com:/home/sw/code/AT_rl_sar/logs/rsl_rl/atdog_d
 
 scp -P 3022 sw@shenweitechnology.com:/home/sw/code/AT_rl_sar/logs/rsl_rl/atdog_dog2_arm_rough/2026-06-14_03-42-01/exported/policy.pt ~/桌面/
 
-scp -P 3022 sw@shenweitechnology.com:/home/sw/code/AT_rl_sar/logs/rsl_rl/atdog_dog3_arm_rough/2026-06-10_14-05-13/exported/policy.pt ~/桌面/
-
 scp -P 3022 sw@shenweitechnology.com:/home/sw/code/AT_rl_sar/logs/rsl_rl/atdog_dog2_arm_rough/2026-06-10_11-04-22 ~/桌面/
 
 ```bash
-docker cp robot-lab:/workspace/isaaclab_extension_template/logs/rsl_rl/atdog_dog2_arm_rough/2026-06-10_11-04-22  robot-lab:/workspace/isaaclab_extension_template/logs/rsl_rl/atdog_dog3_arm_rough/
-
 docker cp ~/桌面/2026-06-12_13-55-44 robot-lab:/workspace/isaaclab_extension_template/logs/rsl_rl/atdog_dog2_arm_rough/
-
-
-cp atdog_dog2_arm_rough/2026-06-10_11-04-22  atdog_dog3_arm_rough/
 ```
 
 
