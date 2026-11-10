@@ -8,6 +8,16 @@ RobotLab-Isaac-Velocity-Flat-CSDog1-282-DomainRand-v0  --282维平地域随机�
 RobotLab-Isaac-Velocity-Stairs-CSDog1-282-v0           --282维台阶
 RobotLab-Isaac-Velocity-Rough-CSDog1-v0                --崎岖
 
+ATDOG2（与 AT_rl_sar 的 Dog2 配置和 URDF 同步）
+任务名称：
+RobotLab-Isaac-Velocity-Flat-ATDog-Dog2-v0      --平地
+RobotLab-Isaac-Velocity-Rough-ATDog-Dog2-v0     --崎岖
+RobotLab-Isaac-Velocity-Stairs-ATDog-Dog2-v0    --台阶
+RobotLab-Isaac-Velocity-Sand-ATDog-Dog2-v0      --沙地
+RobotLab-Isaac-Velocity-Slope-ATDog-Dog2-v0     --斜坡
+RobotLab-Isaac-Velocity-Bar-ATDog-Dog2-v0       --横杆
+训练说明见 `docs/ATDOG_TRAINING_GUIDE.md`；该版本仅注册 RSL-RL PPO 和 CusRL 配置。
+
 注意：ATDOG已经废弃，请使用ATDOG3
 
 export http_proxy=192.168.2.180:7890
@@ -75,7 +85,7 @@ cd /workspace/isaaclab_extension_template
 
 /workspace/isaaclab/isaaclab.sh -p /workspace/isaaclab_extension_template/scripts/reinforcement_learning/rsl_rl/train.py \
   --task=RobotLab-Isaac-Velocity-Flat-ATDog-Dog2-v0 \
-  --agent=rsl_rl_him_cfg_entry_point \
+  --agent=rsl_rl_cfg_entry_point \
   --num_envs=6500 \
   --max_iterations=1000 \
   --headless
@@ -236,7 +246,10 @@ cd /workspace/isaaclab_extension_template
   --headless
 
 
-/workspace/isaaclab/isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/play.py   --task=RobotLab-Isaac-Velocity-Slope-ATDog-Dog2-v0   --checkpoint=/workspace/isaaclab_extension_template/logs/rsl_rl/atdog_dog2_slope_him/2026-09-28_08-38-05/model_11000.pt     --num_envs=10  --agent=rsl_rl_him_cfg_entry_point 
+# 旧 HIM checkpoint 与迁移后的 Dog2 PPO 配置不兼容；请先重新训练并替换 checkpoint。
+/workspace/isaaclab/isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/play.py \
+  --task=RobotLab-Isaac-Velocity-Slope-ATDog-Dog2-v0 \
+  --checkpoint=/absolute/path/to/new_dog2_slope_checkpoint.pt --num_envs=10
 
 
 /workspace/isaaclab/isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/play.py \
@@ -260,9 +273,8 @@ cd /workspace/isaaclab_extension_template
 
 /workspace/isaaclab/isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/play.py \
   --task=RobotLab-Isaac-Velocity-Slope-ATDog-Dog2-v0 \
-  --checkpoint=/workspace/isaaclab_extension_template/logs/rsl_rl/atdog_dog2_slope_him/2026-09-12_11-58-40/model_15900.pt \
-  --num_envs=10\
-  --agent=rsl_rl_him_cfg_entry_point
+  --checkpoint=/absolute/path/to/new_dog2_slope_checkpoint.pt \
+  --num_envs=10
 ```
 
 ## 复制导出的模型到宿主机

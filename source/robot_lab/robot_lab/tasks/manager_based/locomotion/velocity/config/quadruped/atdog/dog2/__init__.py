@@ -16,7 +16,6 @@ gym.register(
     kwargs={
         "env_cfg_entry_point": f"{__name__}.flat_env_cfg:ATDogDog2FlatEnvCfg",
         "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:ATDogDog2FlatPPORunnerCfg",
-        "rsl_rl_him_cfg_entry_point": f"{agents.__name__}.rsl_rl_him_cfg:ATDogDog2FlatHIMRunnerCfg",
         "cusrl_cfg_entry_point": f"{agents.__name__}.cusrl_ppo_cfg:ATDogDog2FlatTrainerCfg",
     },
 )
@@ -28,7 +27,6 @@ gym.register(
     kwargs={
         "env_cfg_entry_point": f"{__name__}.rough_env_cfg:ATDogDog2RoughEnvCfg",
         "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:ATDogDog2RoughPPORunnerCfg",
-        "rsl_rl_him_cfg_entry_point": f"{agents.__name__}.rsl_rl_him_cfg:ATDogDog2RoughHIMRunnerCfg",
         "cusrl_cfg_entry_point": f"{agents.__name__}.cusrl_ppo_cfg:ATDogDog2RoughTrainerCfg",
     },
 )
@@ -40,7 +38,6 @@ gym.register(
     kwargs={
         "env_cfg_entry_point": f"{__name__}.stairs_env_cfg:ATDogDog2StairsEnvCfg",
         "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:ATDogDog2StairsPPORunnerCfg",
-        "rsl_rl_him_cfg_entry_point": f"{agents.__name__}.rsl_rl_him_cfg:ATDogDog2StairsHIMRunnerCfg",
         "cusrl_cfg_entry_point": f"{agents.__name__}.cusrl_ppo_cfg:ATDogDog2StairsTrainerCfg",
     },
 )
@@ -52,7 +49,6 @@ gym.register(
     kwargs={
         "env_cfg_entry_point": f"{__name__}.sand_env_cfg:ATDogDog2SandEnvCfg",
         "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:ATDogDog2SandPPORunnerCfg",
-        "rsl_rl_him_cfg_entry_point": f"{agents.__name__}.rsl_rl_him_cfg:ATDogDog2SandHIMRunnerCfg",
         "cusrl_cfg_entry_point": f"{agents.__name__}.cusrl_ppo_cfg:ATDogDog2SandTrainerCfg",
     },
 )
@@ -64,7 +60,6 @@ gym.register(
     kwargs={
         "env_cfg_entry_point": f"{__name__}.bar_env_cfg:ATDogDog2BarEnvCfg",
         "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:ATDogDog2BarPPORunnerCfg",
-        "rsl_rl_him_cfg_entry_point": f"{agents.__name__}.rsl_rl_him_cfg:ATDogDog2BarHIMRunnerCfg",
         "cusrl_cfg_entry_point": f"{agents.__name__}.cusrl_ppo_cfg:ATDogDog2BarTrainerCfg",
     },
 )
@@ -76,7 +71,6 @@ gym.register(
     kwargs={
         "env_cfg_entry_point": f"{__name__}.slope_env_cfg:ATDogDog2SlopeEnvCfg",
         "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:ATDogDog2SlopePPORunnerCfg",
-        "rsl_rl_him_cfg_entry_point": f"{agents.__name__}.rsl_rl_him_cfg:ATDogDog2SlopeHIMRunnerCfg",
         "cusrl_cfg_entry_point": f"{agents.__name__}.cusrl_ppo_cfg:ATDogDog2SlopeTrainerCfg",
     },
 )

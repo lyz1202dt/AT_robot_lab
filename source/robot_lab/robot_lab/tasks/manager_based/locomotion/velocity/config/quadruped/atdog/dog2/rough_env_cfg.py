@@ -16,6 +16,7 @@ from robot_lab.tasks.manager_based.locomotion.velocity.velocity_env_cfg import L
 # from isaaclab_assets.robots.unitree import UNITREE_GO2_CFG  # isort: skip
 # use local assets
 from robot_lab.assets.atdog import AT_DOG2_CFG  # isort: skip
+from . import rewards as dog2_rewards
 
 # 自定义台阶地形（倒金字塔上台阶）:
 # - 台阶高 10cm
@@ -35,7 +36,7 @@ DOG2_ROUGH_TERRAIN_CFG = terrain_gen.TerrainGeneratorCfg(
     sub_terrains={
         "stairs": terrain_gen.MeshInvertedPyramidStairsTerrainCfg(
             proportion=1.0,
-            step_height_range=(0.09, 0.11),#(最初0.07-0.13)
+            step_height_range=(0.01, 0.02),
             step_width=0.30,
             platform_width=3.0,
             border_width=1.0,
@@ -43,7 +44,7 @@ DOG2_ROUGH_TERRAIN_CFG = terrain_gen.TerrainGeneratorCfg(
         ),
         "stairs2": terrain_gen.MeshPyramidStairsTerrainCfg(
             proportion=1.0,
-            step_height_range=(0.09, 0.11),
+            step_height_range=(0.01, 0.02),
             step_width=0.30,
             platform_width=3.0,
             border_width=1.0,
@@ -60,9 +61,8 @@ class ATDogDog2RoughEnvCfg(LocomotionVelocityRoughEnvCfg):
     # 2) 质量/质心/外力随机化时筛选 body
     # 3) 与 base 相关奖励项的 body 指定
     base_link_name = "base"
-    # URDF 中的 foot link 通过固定关节连接，导入时（merge_fixed_joints=True）
-    # 会并入父级 calf body，因此接触相关奖励/惩罚需要匹配末端 calf body。
-    foot_link_name = ".*_calf"
+    # 保留 URDF 的固定关节，直接使用 foot 刚体的原点和接触数据。
+    foot_link_name = ".*_foot"
     # fmt: off
     # 关节顺序与动作/观测向量顺序保持一致，避免策略输入输出错位
     joint_names = [
@@ -135,26 +135,29 @@ class ATDogDog2RoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         self.actions.joint_pos.joint_names = self.joint_names
 
         # ------------------------------Events 随机化事件------------------------------
+        self.events.randomize_rigid_body_material.params["asset_cfg"].body_names = [self.foot_link_name]
+        self.events.randomize_rigid_body_material.params["static_friction_range"] = (1.2, 2.0)
+        self.events.randomize_rigid_body_material.params["dynamic_friction_range"] = (0.8, 1.1)
         # reset 时随机化机身位姿与速度:
         # - pose_range: 初始位置/姿态扰动范围
         # - velocity_range: 初始线速度/角速度扰动范围
         # 目的: 提升鲁棒性，减少对单一起始状态过拟合
         self.events.randomize_reset_base.params = {
             "pose_range": {
-                "x": (-0.2, 0.2),
-                "y": (-0.2, 0.2),
-                "z": (0.0, 0.08),
-                "roll": (-0.2, 0.2),
-                "pitch": (-0.2, 0.2),
+                "x": (-0.5, 0.5),
+                "y": (-0.5, 0.5),
+                "z": (0.0, 0.2),
+                "roll": (-1.0, 1.0),
+                "pitch": (-1.0, 1.0),
                 "yaw": (-0.0, 0.0),
             },
             "velocity_range": {
-                "x": (-0.1, 0.1),
-                "y": (-0.1, 0.1),
-                "z": (-0.05, 0.05),
-                "roll": (-0.2, 0.2),
-                "pitch": (-0.2, 0.2),
-                "yaw": (-0.2, 0.2),
+                "x": (-1.0, 1.0),
+                "y": (-1.0, 1.0),
+                "z": (-1.0, 0.3),
+                "roll": (-0.8, 0.8),
+                "pitch": (-0.8, 0.8),
+                "yaw": (-0.8, 0.8),
             },
         }
         # 仅随机化 base 的质量
@@ -167,6 +170,10 @@ class ATDogDog2RoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         self.events.randomize_com_positions.params["asset_cfg"].body_names = [self.base_link_name]
         # 外力/外力矩扰动施加到 base，模拟推搡/干扰
         self.events.randomize_apply_external_force_torque.params["asset_cfg"].body_names = [self.base_link_name]
+        self.events.randomize_apply_external_force_torque.params["force_range"] = (-20.0, 20.0)
+        self.events.randomize_apply_external_force_torque.params["torque_range"] = (-8.0, 8.0)
+        self.events.randomize_actuator_gains.params["stiffness_distribution_params"] = (0.9, 1.1)
+        self.events.randomize_actuator_gains.params["damping_distribution_params"] = (0.9, 1.1)
 
         # ------------------------------Rewards 奖励函数------------------------------
         # 约定:
@@ -175,37 +182,37 @@ class ATDogDog2RoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         # - 权重为0: 本项不参与训练（后面可统一 disable）
 
         # General
-        # 终止奖励（通常在 episode 提前结束时给固定惩罚/奖励）。
-        # 这里设为 0，表示不通过该项直接影响学习，终止影响主要体现在回合截断本身。
-        self.rewards.is_terminated.weight = 0
+        # 触地不再终止回合，因此无需终止奖励。
+        self.rewards.is_terminated.weight = 0.0
 
         # Root penalties
         # 惩罚机身 z 方向线速度，抑制“跳跃/颠簸”。
         # 绝对值增大 -> 更追求贴地平稳；过大可能抑制跨越障碍能力。
-        self.rewards.lin_vel_z_l2.weight = -10.0
+        self.rewards.lin_vel_z_l2.weight = -12.0
         # 惩罚机身 x/y 角速度（roll/pitch 旋转速度），降低侧翻和点头抖动。
-        self.rewards.ang_vel_xy_l2.weight = -6.0
-        # 惩罚机身姿态偏离水平（roll/pitch 倾斜角误差）。
-        # 当前关闭，更多依赖速度追踪与接触项“间接”学稳定姿态。
-        self.rewards.flat_orientation_l2.weight = -2.0
-        # 机身高度跟踪惩罚: 鼓励 base 高度接近 target_height。
-        # 粗糙地形里若设太大，策略可能过于僵硬，不利于跨坎/踏石。
-        self.rewards.base_height_l2.weight = -10.0
+        self.rewards.ang_vel_xy_l2.weight = -1.5
+        # 完整重力方向误差在侧倒和倒置时仍持续惩罚姿态偏离。
+        self.rewards.flat_orientation_l2.func = dog2_rewards.gravity_orientation_l2
+        self.rewards.flat_orientation_l2.weight = -6.0
+        # 指数高度惩罚在 0.1 m 误差时约为最大值的 63%，并在大误差时保持有界。
+        self.rewards.base_height_l2.func = dog2_rewards.base_height_exp_penalty
+        self.rewards.base_height_l2.weight = -2.0
+        self.rewards.base_height_l2.params["std"] = 0.1
         # 目标机身高度（单位 m）。
         self.rewards.base_height_l2.params["target_height"] = 0.30
         # 指定用 base 刚体计算该项（避免多 body 统计带来歧义）。
         self.rewards.base_height_l2.params["asset_cfg"].body_names = [self.base_link_name]
-        # 惩罚机身线加速度（平滑机身受力/运动），当前关闭。
+        # 惩罚机身线加速度（平滑机身受力/运动）
         # 该项常用于减小真实机器冲击与传感器饱和风险。
-        self.rewards.body_lin_acc_l2.weight = -2.0e-4
+        self.rewards.body_lin_acc_l2.weight = -0.01
         self.rewards.body_lin_acc_l2.params["asset_cfg"].body_names = [self.base_link_name]
 
         # Joint penalties
         # 力矩 L2 惩罚，控制能耗并抑制“暴力驱动”。
         # 通常与 joint_power 配合，一个约束幅值，一个约束功率。
         self.rewards.joint_torques_l2.weight = -2.5e-5
-        # 关节速度 L2 惩罚，抑制关节甩动，当前关闭。
-        self.rewards.joint_vel_l2.weight = 0
+        # 关节速度 L2 惩罚，抑制关节甩动
+        self.rewards.joint_vel_l2.weight = -1.0e-5
         # 关节加速度 L2 惩罚，鼓励动作更平滑、降低冲击。
         self.rewards.joint_acc_l2.weight = -1.0e-5
         # self.rewards.create_joint_deviation_l1_rewterm("joint_deviation_hip_l1", -0.2, [".*_hip_joint"])
@@ -214,15 +221,15 @@ class ATDogDog2RoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         # 关节速度上限惩罚，当前关闭（可在硬件部署前再打开做保守化）。
         self.rewards.joint_vel_limits.weight = 0
         # 关节功率惩罚（约束机械功输出），降低发热与电池消耗。
-        self.rewards.joint_power.weight = -4.0e-5
+        self.rewards.joint_power.weight = -2e-5
         # 静止命令下站立惩罚项（鼓励“该停就停”）。
         # 权重绝对值越大，零速命令时越倾向快速收敛到稳态。
-        self.rewards.stand_still.weight = -30.0
+        self.rewards.stand_still.weight = -8.0
         # 关节位置正则惩罚（通常相对默认姿态/安全姿态），抑制异常构型。
-        self.rewards.joint_pos_penalty.weight = -4.0
-        self.rewards.joint_pos_penalty.params["stand_still_scale"] = 4.0
+        self.rewards.joint_pos_penalty.weight = -2.5
         # 镜像对称惩罚: 约束对角腿运动统计相近，减少“偏腿”步态。
-        self.rewards.joint_mirror.weight = -1.0
+        self.rewards.joint_mirror.weight = -0.05
+        self.rewards.joint_mirror.func = dog2_rewards.joint_mirror
         # 指定镜像关节对:
         # - FR 对 RL
         # - FL 对 RR
@@ -231,14 +238,14 @@ class ATDogDog2RoughEnvCfg(LocomotionVelocityRoughEnvCfg):
             ["FR_(hip|thigh|calf).*", "RL_(hip|thigh|calf).*"],
             ["FL_(hip|thigh|calf).*", "RR_(hip|thigh|calf).*"],
         ]
+
         # Action penalties
         # 动作变化率惩罚，抑制相邻时刻动作突变，提升控制平滑性与可部署性。
-        self.rewards.action_rate_l2.weight = -2.0
-        # 二阶动作差分惩罚，抑制高频来回修正导致的机身前后/上下抖动。
-        self.rewards.action_smoothness_2_l2.weight = -1.0
+        self.rewards.action_rate_l2.weight = -0.7
 
         # Contact sensor
-        # 非足端 body 接触惩罚（如躯干/大腿触地），鼓励“只让脚接触地面”。
+        # 非足端接触持续扣分，包括机身严重倾斜或翻倒后的触地。
+        self.rewards.undesired_contacts.func = dog2_rewards.undesired_contacts_unconditional
         self.rewards.undesired_contacts.weight = -20.0
         self.rewards.undesired_contacts.params["sensor_cfg"].body_names = [f"^(?!.*{self.foot_link_name}).*"]
         # 足端接触力惩罚，避免落脚冲击过大。
@@ -249,62 +256,58 @@ class ATDogDog2RoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         # Velocity-tracking rewards
         # 线速度追踪主奖励（xy 平面，指数型）。
         # 常为 locomotion 核心驱动项，值越大越优先“跟得上命令”。
-        self.rewards.track_lin_vel_xy_exp.weight = 90.0
+        self.rewards.track_lin_vel_xy_exp.weight = 30.0
+        self.rewards.track_lin_vel_xy_exp.params["std"] = 0.6
         # 偏航角速度追踪奖励（绕 z 转向），支持转向命令执行。
-        self.rewards.track_ang_vel_z_exp.weight = 80.0
+        self.rewards.track_ang_vel_z_exp.weight = 10.0
 
         # Others
         # 足端腾空时间奖励: 鼓励形成明确摆动相，避免拖脚。
-        self.rewards.feet_air_time.weight = 5.0
-        # 只在腾空时间超过阈值时开始计入（单位 s），避免“微小离地”刷分。
-        self.rewards.feet_air_time.params["threshold"] = 0.25
+        self.rewards.feet_air_time.weight = 2.0
+        self.rewards.feet_air_time.params["threshold"] = 0.2
         self.rewards.feet_air_time.params["sensor_cfg"].body_names = [self.foot_link_name]
         # 腾空时间方差惩罚: 抑制四腿步态节律差异过大，提升步态均匀性。
-        self.rewards.feet_air_time_variance.weight = -6.0
+        self.rewards.feet_air_time_variance.weight = -30.0
         self.rewards.feet_air_time_variance.params["sensor_cfg"].body_names = [self.foot_link_name]
         # 足接触奖励（可用于鼓励稳定支撑），当前关闭。
         self.rewards.feet_contact.weight = 0
         self.rewards.feet_contact.params["sensor_cfg"].body_names = [self.foot_link_name]
         # 无速度命令时的足接触奖励: 鼓励静止时脚不乱抬，站姿更稳。
-        self.rewards.feet_contact_without_cmd.weight = 2.0
+        self.rewards.feet_contact_without_cmd.weight = 0.5
         self.rewards.feet_contact_without_cmd.params["sensor_cfg"].body_names = [self.foot_link_name]
         # 绊脚/碰撞惩罚，当前关闭（可按地形难度逐步启用）。
         self.rewards.feet_stumble.weight = 0.0
         self.rewards.feet_stumble.params["sensor_cfg"].body_names = [self.foot_link_name]
         # 足端滑动惩罚: 脚着地后相对地面滑移越大，惩罚越大。
-        self.rewards.feet_slide.weight = -5.0
+        self.rewards.feet_slide.weight = -10.0
         self.rewards.feet_slide.params["sensor_cfg"].body_names = [self.foot_link_name]
         self.rewards.feet_slide.params["asset_cfg"].body_names = [self.foot_link_name]
-        # 足端绝对高度目标项（常用于抬脚高度约束），当前关闭。
-        self.rewards.feet_height.weight = -15.0
-        self.rewards.feet_height.params["target_height"] = 0.08
+        # 摆动足端的世界高度目标。
+        self.rewards.feet_height.weight = -20.0
+        self.rewards.feet_height.params["target_height"] = 0.15
         self.rewards.feet_height.params["asset_cfg"].body_names = [self.foot_link_name]
-        # 相对机身的足端高度惩罚（body frame），约束抬腿轨迹不过高/不过低。
-        # target_height=-0.2 表示期望脚位于机身下方一定距离处。
+        # 机身目标高度 0.30 m、摆动足端目标高度 0.15 m，对应机身坐标系下 -0.15 m。
         self.rewards.feet_height_body.weight = -5.0
-        self.rewards.feet_height_body.params["target_height"] = -0.7
+        self.rewards.feet_height_body.params["target_height"] = -0.15
         self.rewards.feet_height_body.params["asset_cfg"].body_names = [self.foot_link_name]
         # 步态同步奖励: 鼓励对角腿成对同步（trot 风格）。
-        self.rewards.feet_gait.weight = 20.0
-        self.rewards.feet_gait.params["synced_feet_pair_names"] = (("FL_calf", "RR_calf"), ("FR_calf", "RL_calf"))
-        # 当前接触模式约束: 只在有速度命令时启用，抑制 pacing/bounding/四脚跳导致的机身上下弹跳。
-        self.rewards.diagonal_trot_contact_pattern.weight = -2.0
-        self.rewards.diagonal_trot_contact_pattern.params["foot_names"] = ("FL_calf", "FR_calf", "RL_calf", "RR_calf")
+        self.rewards.feet_gait.weight = 3.0
+        self.rewards.feet_gait.params["std"] = 0.05
+        self.rewards.feet_gait.params["max_err"] = 0.3
+        self.rewards.feet_gait.params["synced_feet_pair_names"] = (("FL_foot", "RR_foot"), ("FR_foot", "RL_foot"))
         # 机身“向上”姿态奖励（保持重力反方向对齐），提升整体直立稳定性。
-        self.rewards.upward.weight = 20.0
+        self.rewards.upward.weight = 5.0
 
-        self.rewards.feet_distance_y_exp.weight = 5.0
-        self.rewards.feet_distance_y_exp.params["stance_width"] = 0.11
-        self.rewards.feet_distance_y_exp.params["std"] = 0.11
-        self.rewards.feet_distance_y_exp.params["asset_cfg"].body_names = ["FL_calf", "FR_calf", "RL_calf", "RR_calf"]
+        self.rewards.feet_distance_y_exp.weight = 0.8
+        self.rewards.feet_distance_y_exp.params["stance_width"] = 0.34
+        self.rewards.feet_distance_y_exp.params["std"] = 0.15
+        self.rewards.feet_distance_y_exp.params["asset_cfg"].body_names = ["FL_foot", "FR_foot", "RL_foot", "RR_foot"]
 
         # 将权重为0的奖励项禁用，减少无效计算与配置噪声
-        if self.__class__.__name__ == "ATDogDog2RoughEnvCfg": 
+        if self.__class__.__name__ == "ATDogDog2RoughEnvCfg":
             self.disable_zero_weight_rewards()
 
         # ------------------------------Terminations 终止条件------------------------------
-        # self.terminations.illegal_contact.params["sensor_cfg"].body_names = [self.base_link_name, ".*_hip"]
-        # 关闭非法接触终止（由奖励项去“软约束”）
         self.terminations.illegal_contact = None
 
         # ------------------------------Curriculums 课程学习------------------------------
@@ -313,9 +316,7 @@ class ATDogDog2RoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         self.curriculum.command_levels = None
 
         # ------------------------------Commands 命令范围------------------------------
-        # 先提高零速/低速样本占比并限制横向/偏航命令，让策略优先学会稳定站立和低速步态。
-        self.commands.base_velocity.rel_standing_envs = 0.2
-        self.commands.base_velocity.rel_heading_envs = 0.5
-        self.commands.base_velocity.ranges.lin_vel_x = (-1.0, 1.0)
-        self.commands.base_velocity.ranges.lin_vel_y = (-0.5, 0.5)
-        self.commands.base_velocity.ranges.ang_vel_z = (-1.0, 1.0)
+        # 如需限制速度指令范围，可取消下方注释并按需调整
+        # self.commands.base_velocity.ranges.lin_vel_x = (-1.0, 1.0)
+        # self.commands.base_velocity.ranges.lin_vel_y = (-0.5, 0.5)
+        # self.commands.base_velocity.ranges.ang_vel_z = (-1.0, 1.0)

@@ -2,6 +2,20 @@
 
 本文以仓库已有的 AT-DOG2 为例，说明如何把一台四足机器人接入 Isaac Lab，并开展平地、粗糙地形、楼梯、沙地、横杆和斜坡训练。
 
+AT-DOG2 的训练配置、URDF 和网格已同步自 `AT_rl_sar`。实际 Dog2 使用 `merge_fixed_joints=False` 保留 `.*_foot` 接触刚体；初始机身高度为 0.40 m，腿部默认 thigh 角为 -0.7854 rad。Dog2 特有的高度、姿态、接触和镜像奖励在 `dog2/rewards.py` 中，避免改变 CSDog1 和 03dog 的公共奖励行为。
+
+注意：`AT_DOG4_CFG` 原本也引用 `dog2/urdf/dog2.urdf`，因此本次 URDF/网格替换同样会改变 Dog4 加载的模型；Dog4 自身的任务配置和执行器配置未修改。
+
+在项目根目录运行训练（以粗糙地形为例）：
+
+```bash
+/workspace/isaaclab/isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/train.py \
+  --task=RobotLab-Isaac-Velocity-Rough-ATDog-Dog2-v0 \
+  --num_envs=10000 --max_iterations=2000 --headless
+```
+
+上述命令适用于项目提供的 Isaac Lab 容器；在宿主机上可改用已安装 Isaac Lab 的 Python 解释器。源项目 `AT_DESCRIPE.md` 中 Dog2 的平地、台阶、沙地和斜坡任务 ID 均在 `dog2/__init__.py` 注册；横杆任务也在此注册。继续训练时可追加 `--resume --load_run=<run_name> --checkpoint=<checkpoint_name>`，请使用目标项目自身生成的 checkpoint。
+
 ## 一、整体流程
 
 ```text
@@ -51,7 +65,7 @@ MYDOG_CFG = ArticulationCfg(
     spawn=sim_utils.UrdfFileCfg(
         asset_path=f"{ISAACLAB_ASSETS_DATA_DIR}/Robots/mydog/urdf/mydog.urdf",
         fix_base=False,
-        merge_fixed_joints=True,
+        merge_fixed_joints=False,
         activate_contact_sensors=True,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             disable_gravity=False,
@@ -72,11 +86,10 @@ MYDOG_CFG = ArticulationCfg(
         ),
     ),
     init_state=ArticulationCfg.InitialStateCfg(
-        pos=(0.0, 0.0, 0.25),
+        pos=(0.0, 0.0, 0.40),
         joint_pos={
             ".*_hip_joint": 0.0,
-            ".*L_thigh_joint": 0.8,
-            ".*R_thigh_joint": -0.8,
+            ".*_thigh_joint": -0.7854,
             ".*_calf_joint": 0.0,
         },
         joint_vel={".*": 0.0},
@@ -85,11 +98,13 @@ MYDOG_CFG = ArticulationCfg(
     actuators={
         "legs": DelayedPDActuatorCfg(
             joint_names_expr=[".*"],
-            effort_limit=23.5,
+            effort_limit=30.0,
             velocity_limit=30.0,
-            stiffness=25.0,
-            damping=1.333,
-            friction=0.2458,
+            stiffness=40.0,
+            damping=1.0,
+            friction=0.32,
+            dynamic_friction=0.29274320,
+            viscous_friction=0.02658733,
             min_delay=1,
             max_delay=2,
         ),
@@ -99,7 +114,7 @@ MYDOG_CFG = ArticulationCfg(
 
 `effort_limit` 是最大力矩，`velocity_limit` 是最大关节速度，`stiffness/damping` 是 PD 增益，`friction` 是执行器库仑摩擦近似，`min_delay/max_delay` 以物理步为单位模拟控制延迟。
 
-如果 12 个电机的摩擦参数不同，应拆成 12 个 actuator group，每组的 `joint_names_expr` 只匹配一个关节；参见当前 `atdog.py` 中 `FL/FR/RL/RR` 的写法。
+如果 12 个电机的摩擦参数不同，可以拆成 12 个 actuator group；当前 Dog2 在 `atdog.py` 中使用一个 `legs` group。
 
 ## 四、创建环境配置
 
@@ -117,7 +132,6 @@ source/robot_lab/robot_lab/tasks/manager_based/locomotion/velocity/config/quadru
 └── agents/
     ├── __init__.py
     ├── rsl_rl_ppo_cfg.py
-    ├── rsl_rl_him_cfg.py
     └── cusrl_ppo_cfg.py
 ```
 
@@ -134,7 +148,7 @@ self.scene.robot = MYDOG_CFG.replace(
 self.scene.height_scanner.prim_path = "{ENV_REGEX_NS}/Robot/base"
 self.scene.height_scanner_base.prim_path = "{ENV_REGEX_NS}/Robot/base"
 self.base_link_name = "base"       # 改成 URDF 实际机身 link
-self.foot_link_name = ".*_calf"     # 改成实际足端/小腿 body
+self.foot_link_name = ".*_foot"     # 改成实际足端 body
 self.joint_names = [                # 必须与动作和观测顺序一致
     "FR_hip_joint", "FR_thigh_joint", "FR_calf_joint",
     "FL_hip_joint", "FL_thigh_joint", "FL_calf_joint",
