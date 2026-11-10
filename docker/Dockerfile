@@ -100,7 +100,7 @@ RUN bash -i -c 'source "${HOME}/.bashrc" && \
     export ISAACLAB_PATH=${ISAACLAB_PATH:-/workspace/isaaclab} && \
     cd ${DOCKER_ISAACLAB_EXTENSION_TEMPLATE_PATH}/source/robot_lab && \
     ${ISAACLAB_PATH}/isaaclab.sh -p -m pip install -e . && \
-    ${ISAACLAB_PATH}/isaaclab.sh -p -m pip install --no-deps "tensordict==0.12.1" && \
+    ${ISAACLAB_PATH}/isaaclab.sh -p -m pip install --no-deps "tensordict==0.8.3" && \
     ${ISAACLAB_PATH}/isaaclab.sh -p -c "import tensordict; from rsl_rl.runners import DistillationRunner, OnPolicyRunner"'
 
 # make working directory as the Isaac Lab directory
