@@ -84,15 +84,17 @@ HIM history contains six complete frames, oldest to latest. The full Cyberstar
 stages also preserve the 491-D privileged critic, command scale `[2, 2, 0.25]`,
 contact-dependent stopping, action delay, explicit PD and structured commands.
 Flat-282 uses the same full Cyberstar environment, rewards, terrain and command
-scale as DomainRand. Only its `domain_rand.randomize_*` flags and
-`domain_rand.push_robots` are disabled; observation noise and reset/command
-sampling remain enabled. Flat / Rough use command scale `[1, 1, 0.25]`.
+scale as DomainRand. Its `domain_rand.randomize_*` flags and
+`domain_rand.push_robots` are disabled, and joint reset velocity remains zero;
+other reset/command sampling and observation noise remain enabled. Flat / Rough
+use command scale `[1, 1, 0.25]`.
 
 ### Domain randomization parity with ATDog
 
 The 282-D DomainRand and stairs stages already include link/base mass, inertia,
 COM, joint zero offsets, motor strength, PD gains, control delay, static friction,
-observation noise, reset joint/root velocity sampling and periodic pushes.
+observation noise, root velocity sampling and periodic pushes. DomainRand also
+samples joint reset velocity; stairs currently keep it at zero.
 The following ATDog randomizations are also implemented in the Cyberstar adapter:
 
 | Addition | Range | Sampling |
@@ -145,8 +147,8 @@ Drive torque is saturated before passive friction is subtracted, without a
 second motor clamp on the resulting joint torque.
 
 The renewed ATDog audit also adds mass-dependent inertia scaling
-(`domain_rand.recompute_inertia`), flat reset joint velocity sampling (±2 rad/s;
-stairs remain zero),
+(`domain_rand.recompute_inertia`), reset joint velocity sampling only in
+Flat-282-DomainRand (±2 rad/s; ordinary Flat-282 and stairs remain zero),
 and per-environment resampled push intervals (`randomize_push_interval`): 10–15 s
 on robust flat ground and 15–20 s on stairs. Zero offsets or disabling the switch
 restore fixed intervals. The action-delay buffer follows the configured

@@ -66,6 +66,8 @@ class Dog03MotorDynamicsTest(unittest.TestCase):
             runtime.compute_observations()
             self.assertEqual(runtime.obs_buf.shape, (8, 282))
             self.assertEqual(runtime.privileged_obs_buf.shape, (8, 491))
+        self.assertEqual(flat_config()["init_state"]["reset_dof_velocity_range"], [0, 0])
+        self.assertEqual(source_config()["env"]["init_state"]["reset_dof_velocity_range"], [-2, 2])
 
     def test_pd_gains_are_loaded_with_per_joint_overrides(self):
         config = source_config()["env"]

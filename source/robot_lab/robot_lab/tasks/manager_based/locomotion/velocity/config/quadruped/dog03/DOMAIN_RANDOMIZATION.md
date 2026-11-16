@@ -3,7 +3,7 @@
 ## 配置入口
 
 - 平地域随机化 `RobotLab-Isaac-Velocity-Flat-03Dog-282-DomainRand-v0`：`cyberstar/config.json` 的 `env`。
-- 平地预训练 `RobotLab-Isaac-Velocity-Flat-03Dog-282-v0`：同一份 JSON，但 `randomize_*` 和 `push_robots` 被关闭。
+- 平地预训练 `RobotLab-Isaac-Velocity-Flat-03Dog-282-v0`：同一份 JSON，但 `randomize_*` 和 `push_robots` 被关闭，关节初速度范围恢复为 `[0, 0]`。
 - 楼梯 `RobotLab-Isaac-Velocity-Stairs-03Dog-282-v0`：`cyberstar/stairs_config.json` 的 `env`。
 - 三者共用电机实现；Actor 282 维、Critic 491 维及历史顺序保持不变。
 - 参数在进程启动时读取，修改后须重新启动。以下配置不作用于非 282 的普通 Flat/Rough 任务。
@@ -96,7 +96,7 @@ b_actual = max(0, b_nominal + uniform(viscous_offset_range))
 | 质量变化后同步惯量，ATDog 的 `recompute_inertia=True` | 新接入 `recompute_inertia`：按质量比缩放完整惯量张量；之后再叠加原有独立惯量随机倍率 | Startup |
 | 机身 COM | `randomize_com`、`com_range_x/y/z`；03dog 另有连杆 COM 随机化 | Startup |
 | 机身外力、力矩 | `randomize_external_force_torque`、`external_force_range`、`external_torque_range`，重置采样后持续施加 | Reset |
-| 关节初始位置、初始速度 | `init_state.reset_dof_scale_range`；平地 `reset_dof_velocity_range=[-2, 2]` rad/s，楼梯为 `[0, 0]` | Reset |
+| 关节初始位置、初始速度 | `init_state.reset_dof_scale_range`；仅平地 DomainRand 使用 `reset_dof_velocity_range=[-2, 2]` rad/s，普通 Flat 和楼梯为 `[0, 0]` | Reset |
 | PD 刚度 / 阻尼倍率 | `randomize_pd_gains`、`kp_scale_range`、`kd_scale_range`；基值来自 JSON | Reset |
 | 初始根位置 / 姿态 / 速度 | `init_state.reset_root_position_range`、`randomize_reset_pose`、`reset_pose_range`、逐轴 `init_state.reset_root_velocity_range` | Reset |
 | 定时随机速度推扰 | 原有推扰模式、幅度和安全门；新接入 `randomize_push_interval`、`push_interval_offset_range_s` | Interval |
@@ -105,7 +105,7 @@ b_actual = max(0, b_nominal + uniform(viscous_offset_range))
 | Actor 观测噪声 | 原有 `noise.add_noise` / `noise_scales`，覆盖角速度、重力、关节位置和关节速度 | 观测采样 |
 
 ATDog 共同父类当前有 9 个启用事件，表中前 10 行将接触材质和重置状态展开列出。
-ATDog 的关节初速度默认范围是零；03dog 平地任务现在使用 ±2 rad/s 的独立逐关节采样。
+ATDog 的关节初速度默认范围是零；03dog 仅平地 DomainRand 使用 ±2 rad/s 的独立逐关节采样。
 ATDog 资产当前有固定关节摩擦，但没有独立的电机摩擦参数随机事件；本次给 03dog 同时补上模型和随机化入口。
 ATDog 资产注释把 `damping` 称为“黏性摩擦”，但 `DelayedPDActuator` 的实现把它用于 PD 速度误差反馈，不能据此替代机械摩擦模型。
 ATDog 的独立惯量事件是注释掉的；实际联动来自质量事件的 `recompute_inertia=True`。
@@ -195,7 +195,7 @@ ATDog 的 `reset_root_state_uniform` 能分别配置 XY 位置和六轴速度，
   旧版 `reset_root_velocity_range=0.1` 仍表示六轴各 ±0.1，缺少 XY 字典时兼容原来的 ±1 m。
 - 楼梯不使用此 XY 偏移，仍由 `stair_spawn_*` 放置在平台边缘，避免扰动到楼梯外。
   楼梯 JSON 中 XY 占位为零，六轴速度与平地一样可以分别填写。
-- 普通 Flat-282 继续保留训练重置状态扰动，只有动力学随机化和推扰被禁用；这与此前的预训练语义一致。
+- 普通 Flat-282 继续保留其他训练重置状态扰动，但关节初速度固定为零；动力学随机化和推扰也被禁用。
 - `init_state.rot` 按源配置的 **xyzw** 转成 Isaac Lab 的 **wxyz**；
   `lin_vel`、`ang_vel` 现在同样传给资产，并作为速度随机偏移的基准，不再被重置逻辑覆盖成零。
   楼梯仍以其采样 yaw 替代标称姿态，保持航向参考一致。

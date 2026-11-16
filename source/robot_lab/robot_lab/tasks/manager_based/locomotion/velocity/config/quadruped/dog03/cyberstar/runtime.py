@@ -28,6 +28,7 @@ def flat_config():
     for name in config["domain_rand"]:
         if name.startswith("randomize_") or name == "push_robots":
             config["domain_rand"][name] = False
+    config["init_state"]["reset_dof_velocity_range"] = [0.0, 0.0]
     return config
 
 
