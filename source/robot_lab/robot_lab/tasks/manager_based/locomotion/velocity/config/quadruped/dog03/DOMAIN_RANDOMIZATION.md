@@ -52,17 +52,24 @@ PhysX 原生关节摩擦显式置零，避免与自定义模型重复计算。
 这是库仑 + 黏性模型：`dq = 0` 时摩擦为零，不包含静摩擦保持、Stribeck、温度或齿隙模型。
 ATDog 的原生 `friction` 是 PhysX 关节摩擦参数，不应不经验证就当成辨识所得的 N·m 力矩系数。
 
-## 摩擦随机化：占位值全为零
+## 摩擦随机化：平地鲁棒任务参考 ATDog
 
-两份 JSON 的 `env.domain_rand` 均包含：
+`AT_DOG2_CFG` 配置的运动库仑摩擦 (`dynamic_friction`) 为 `0.29274320`，
+黏滞摩擦 (`viscous_friction`) 为 `0.02658733`；`friction=0.32` 是静摩擦，
+不用于此处的运动库仑摩擦范围。平地 `config.json` 的 `env.domain_rand` 为：
 
 ```json
 {
   "randomize_joint_friction": true,
-  "joint_coulomb_friction_offset_range": [0.0, 0.0],
-  "joint_viscous_friction_offset_range": [0.0, 0.0]
+  "joint_coulomb_friction_offset_range": [0.1463716, 0.5854864],
+  "joint_viscous_friction_offset_range": [0.013293665, 0.05317466]
 }
 ```
+
+两种摩擦的标称值仍为零，因此平地鲁棒训练实际采样到 ATDog 对应数值的
+`0.5–2.0` 倍。楼梯 `stairs_config.json` 的两项偏移仍为 `[0, 0]`。
+03dog 使用自定义关节力矩模型，而 ATDog 使用 PhysX 原生关节摩擦；这些数值仅作为采样基准，
+不表示两种模型的动力学完全相同。
 
 训练重置时，对每个环境、每个关节独立采样均匀分布偏移：
 
@@ -71,8 +78,8 @@ a_actual = max(0, a_nominal + uniform(coulomb_offset_range))
 b_actual = max(0, b_nominal + uniform(viscous_offset_range))
 ```
 
-这两个范围是**加法偏移**，不是倍率或绝对系数。初始零范围表示不增加不确定性；
-修改 nominal 后，即使不改范围，也会使用填写的固定摩擦。关闭随机化或回放时，仍保留 nominal，
+这两个范围是**加法偏移**，不是倍率；修改 nominal 后实际区间会平移。
+关闭随机化或回放时，仍保留 nominal，
 不会把已辨识的机械摩擦清零。只更新正在重置的环境，其他环境的参数保持不变。
 
 ## 从当前 ATDog 源码逐项复核
@@ -89,7 +96,7 @@ b_actual = max(0, b_nominal + uniform(viscous_offset_range))
 | 质量变化后同步惯量，ATDog 的 `recompute_inertia=True` | 新接入 `recompute_inertia`：按质量比缩放完整惯量张量；之后再叠加原有独立惯量随机倍率 | Startup |
 | 机身 COM | `randomize_com`、`com_range_x/y/z`；03dog 另有连杆 COM 随机化 | Startup |
 | 机身外力、力矩 | `randomize_external_force_torque`、`external_force_range`、`external_torque_range`，重置采样后持续施加 | Reset |
-| 关节初始位置、初始速度 | `init_state.reset_dof_scale_range`；新接入 `reset_dof_velocity_range`，初值 `[0, 0]` | Reset |
+| 关节初始位置、初始速度 | `init_state.reset_dof_scale_range`；平地 `reset_dof_velocity_range=[-2, 2]` rad/s，楼梯为 `[0, 0]` | Reset |
 | PD 刚度 / 阻尼倍率 | `randomize_pd_gains`、`kp_scale_range`、`kd_scale_range`；基值来自 JSON | Reset |
 | 初始根位置 / 姿态 / 速度 | `init_state.reset_root_position_range`、`randomize_reset_pose`、`reset_pose_range`、逐轴 `init_state.reset_root_velocity_range` | Reset |
 | 定时随机速度推扰 | 原有推扰模式、幅度和安全门；新接入 `randomize_push_interval`、`push_interval_offset_range_s` | Interval |
@@ -98,7 +105,7 @@ b_actual = max(0, b_nominal + uniform(viscous_offset_range))
 | Actor 观测噪声 | 原有 `noise.add_noise` / `noise_scales`，覆盖角速度、重力、关节位置和关节速度 | 观测采样 |
 
 ATDog 共同父类当前有 9 个启用事件，表中前 10 行将接触材质和重置状态展开列出。
-其中关节初速度的 ATDog 默认范围本身也是零；此前 03dog 将其硬编码为零，现在提供可填写的入口。
+ATDog 的关节初速度默认范围是零；03dog 平地任务现在使用 ±2 rad/s 的独立逐关节采样。
 ATDog 资产当前有固定关节摩擦，但没有独立的电机摩擦参数随机事件；本次给 03dog 同时补上模型和随机化入口。
 ATDog 资产注释把 `damping` 称为“黏性摩擦”，但 `DelayedPDActuator` 的实现把它用于 PD 速度误差反馈，不能据此替代机械摩擦模型。
 ATDog 的独立惯量事件是注释掉的；实际联动来自质量事件的 `recompute_inertia=True`。

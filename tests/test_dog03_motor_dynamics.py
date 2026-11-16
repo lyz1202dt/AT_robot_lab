@@ -40,6 +40,10 @@ class Dog03MotorDynamicsTest(unittest.TestCase):
         torch.manual_seed(17)
 
     def test_json_defaults_and_both_282_stages(self):
+        flat_friction_ranges = {
+            "coulomb": [0.1463716, 0.5854864],
+            "viscous": [0.013293665, 0.05317466],
+        }
         for filename in ("config.json", "stairs_config.json"):
             config = json.loads((PACKAGE / filename).read_text())["env"]
             runtime = (
@@ -52,9 +56,13 @@ class Dog03MotorDynamicsTest(unittest.TestCase):
                 values = config["control"]["motor_friction"][name]
                 self.assertEqual(set(values), set(runtime.dof_names))
                 self.assertTrue(all(value == 0 for value in values.values()))
-                self.assertEqual(getattr(runtime, f"joint_{name}_friction").abs().sum().item(), 0)
-                self.assertEqual(config["domain_rand"][f"joint_{name}_friction_offset_range"], [0, 0])
-            self.assertEqual(config["init_state"]["reset_dof_velocity_range"], [0, 0])
+                expected_range = flat_friction_ranges[name] if filename == "config.json" else [0, 0]
+                self.assertEqual(config["domain_rand"][f"joint_{name}_friction_offset_range"], expected_range)
+                sampled = getattr(runtime, f"joint_{name}_friction")
+                self.assertTrue((sampled >= expected_range[0]).all())
+                self.assertTrue((sampled <= expected_range[1]).all())
+            expected_reset_velocity_range = [-2, 2] if filename == "config.json" else [0, 0]
+            self.assertEqual(config["init_state"]["reset_dof_velocity_range"], expected_reset_velocity_range)
             runtime.compute_observations()
             self.assertEqual(runtime.obs_buf.shape, (8, 282))
             self.assertEqual(runtime.privileged_obs_buf.shape, (8, 491))
@@ -177,6 +185,7 @@ class Dog03MotorDynamicsTest(unittest.TestCase):
 
     def test_reset_applies_friction_to_correct_actuator_joints_and_joint_velocity(self):
         runtime = CyberstarRuntime(8, "cpu")
+        runtime.cfg.domain_rand.randomize_joint_friction = False
         runtime.cfg.control.motor_friction.coulomb.FL_hip_joint = 0.3
         runtime.nominal_joint_coulomb_friction[0, 0] = 0.3
         runtime.cfg.init_state.reset_dof_velocity_range = [0.2, 0.2]

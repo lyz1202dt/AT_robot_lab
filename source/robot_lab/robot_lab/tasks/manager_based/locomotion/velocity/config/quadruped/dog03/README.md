@@ -137,13 +137,16 @@ including exact-joint or full-match regex overrides. The identified passive moto
 model is independent of PD damping: `env.control.motor_friction.coulomb` (N·m)
 and `.viscous` (N·m·s/rad) contain all 12 joints, initially zero.
 `domain_rand.randomize_joint_friction` samples additive coefficient offsets at
-reset; both offset ranges initially contain only zero. Nominal friction also
-applies in Flat-282 and playback, while coefficient randomization does not.
+reset. Robust Flat-282 samples 0.5–2.0 times the ATDog dynamic (Coulomb)
+friction value 0.29274320 and viscous value 0.02658733; nominal coefficients
+remain zero. Stairs-282 retains zero offsets. Nominal friction also applies in
+Flat-282 and playback, while coefficient randomization does not.
 Drive torque is saturated before passive friction is subtracted, without a
 second motor clamp on the resulting joint torque.
 
 The renewed ATDog audit also adds mass-dependent inertia scaling
-(`domain_rand.recompute_inertia`), reset joint velocity sampling (initially zero),
+(`domain_rand.recompute_inertia`), flat reset joint velocity sampling (±2 rad/s;
+stairs remain zero),
 and per-environment resampled push intervals (`randomize_push_interval`): 10–15 s
 on robust flat ground and 15–20 s on stairs. Zero offsets or disabling the switch
 restore fixed intervals. The action-delay buffer follows the configured

@@ -3,6 +3,7 @@
 
 from isaaclab.utils import configclass
 
+from . import rewards as dog2_rewards
 from .rough_env_cfg import ATDogDog2RoughEnvCfg
 
 
@@ -36,6 +37,7 @@ class ATDogDog2FlatEnvCfg(ATDogDog2RoughEnvCfg):
 
         # override rewards
         self.rewards.base_height_l2.params["sensor_cfg"] = None
+        self.rewards.feet_slide.func = dog2_rewards.feet_slide_world
         # change terrain to flat
         self.scene.terrain.terrain_type = "plane"
         self.scene.terrain.terrain_generator = None

@@ -54,3 +54,14 @@ def gravity_orientation_l2(env, asset_cfg: SceneEntityCfg = SceneEntityCfg("robo
     asset = env.scene[asset_cfg.name]
     gravity_b = asset.data.projected_gravity_b
     return torch.sum(torch.square(gravity_b[:, :2]), dim=1) + torch.square(gravity_b[:, 2] + 1.0)
+
+
+def feet_slide_world(env, sensor_cfg: SceneEntityCfg, asset_cfg: SceneEntityCfg) -> torch.Tensor:
+    """Penalize horizontal ground-relative velocity of feet in contact."""
+    contact_sensor = env.scene.sensors[sensor_cfg.name]
+    contacts = contact_sensor.data.net_forces_w_history[:, :, sensor_cfg.body_ids, :].norm(dim=-1).max(dim=1)[0] > 1.0
+    asset = env.scene[asset_cfg.name]
+    foot_speed = torch.linalg.norm(asset.data.body_lin_vel_w[:, asset_cfg.body_ids, :2], dim=-1)
+    reward = torch.sum(foot_speed * contacts, dim=1)
+    reward *= torch.clamp(-asset.data.projected_gravity_b[:, 2], 0, 0.7) / 0.7
+    return reward
