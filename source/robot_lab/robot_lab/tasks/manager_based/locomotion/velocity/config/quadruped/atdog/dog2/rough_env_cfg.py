@@ -160,6 +160,14 @@ class ATDogDog2RoughEnvCfg(LocomotionVelocityRoughEnvCfg):
                 "yaw": (-0.8, 0.8),
             },
         }
+
+        self.events.randomize_push_robot.params["velocity_range"] = {
+            "x": (-0.7, 0.7),
+            "y": (-0.7, 0.7),
+        }
+        self.events.randomize_rigid_body_material.params["static_friction_range"] = (0.5, 0.9)
+        self.events.randomize_rigid_body_material.params["dynamic_friction_range"] = (0.4, 0.8)
+
         # 仅随机化 base 的质量
         self.events.randomize_rigid_body_mass_base.params["asset_cfg"].body_names = [self.base_link_name]
         # 随机化除 base 外其他刚体质量（负向前瞻正则: 不匹配 base）
@@ -172,8 +180,8 @@ class ATDogDog2RoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         self.events.randomize_apply_external_force_torque.params["asset_cfg"].body_names = [self.base_link_name]
         self.events.randomize_apply_external_force_torque.params["force_range"] = (-20.0, 20.0)
         self.events.randomize_apply_external_force_torque.params["torque_range"] = (-8.0, 8.0)
-        self.events.randomize_actuator_gains.params["stiffness_distribution_params"] = (0.9, 1.1)
-        self.events.randomize_actuator_gains.params["damping_distribution_params"] = (0.9, 1.1)
+        self.events.randomize_actuator_gains.params["stiffness_distribution_params"] = (0.8, 1.2)
+        self.events.randomize_actuator_gains.params["damping_distribution_params"] = (0.8, 1.2)
 
         # ------------------------------Rewards 奖励函数------------------------------
         # 约定:
@@ -188,9 +196,9 @@ class ATDogDog2RoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         # Root penalties
         # 惩罚机身 z 方向线速度，抑制“跳跃/颠簸”。
         # 绝对值增大 -> 更追求贴地平稳；过大可能抑制跨越障碍能力。
-        self.rewards.lin_vel_z_l2.weight = -12.0
+        self.rewards.lin_vel_z_l2.weight = -20.0
         # 惩罚机身 x/y 角速度（roll/pitch 旋转速度），降低侧翻和点头抖动。
-        self.rewards.ang_vel_xy_l2.weight = -1.5
+        self.rewards.ang_vel_xy_l2.weight = -2.0
         # 完整重力方向误差在侧倒和倒置时仍持续惩罚姿态偏离。
         self.rewards.flat_orientation_l2.func = dog2_rewards.gravity_orientation_l2
         self.rewards.flat_orientation_l2.weight = -6.0
@@ -241,7 +249,7 @@ class ATDogDog2RoughEnvCfg(LocomotionVelocityRoughEnvCfg):
 
         # Action penalties
         # 动作变化率惩罚，抑制相邻时刻动作突变，提升控制平滑性与可部署性。
-        self.rewards.action_rate_l2.weight = -0.7
+        self.rewards.action_rate_l2.weight = -0.5
 
         # Contact sensor
         # 非足端接触持续扣分，包括机身严重倾斜或翻倒后的触地。
@@ -296,7 +304,7 @@ class ATDogDog2RoughEnvCfg(LocomotionVelocityRoughEnvCfg):
         self.rewards.feet_gait.params["max_err"] = 0.3
         self.rewards.feet_gait.params["synced_feet_pair_names"] = (("FL_foot", "RR_foot"), ("FR_foot", "RL_foot"))
         # 机身“向上”姿态奖励（保持重力反方向对齐），提升整体直立稳定性。
-        self.rewards.upward.weight = 5.0
+        self.rewards.upward.weight = 8.0
 
         self.rewards.feet_distance_y_exp.weight = 0.8
         self.rewards.feet_distance_y_exp.params["stance_width"] = 0.34

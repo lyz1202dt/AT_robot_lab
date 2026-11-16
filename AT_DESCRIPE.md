@@ -81,6 +81,7 @@ cd /workspace/isaaclab_extension_template
   --load_run=<csdog1_flat_282_run> \
   --checkpoint=<checkpoint.pt>
 
+# ATDog2
 
 /workspace/isaaclab/isaaclab.sh -p /workspace/isaaclab_extension_template/scripts/reinforcement_learning/rsl_rl/train.py \
   --task=RobotLab-Isaac-Velocity-Flat-ATDog-Dog2-v0 \
