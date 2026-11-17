@@ -136,6 +136,20 @@ class ATDogDog2FlatPPORunnerCfg(ATDogDog2RoughPPORunnerCfg):
 
 
 @configclass
+class ATDogDog2Flat270PPORunnerCfg(ATDogDog2FlatPPORunnerCfg):
+    def __post_init__(self):
+        super().__post_init__()
+        self.experiment_name = "atdog_dog2_flat270"
+
+
+@configclass
+class ATDogDog2Rough270PPORunnerCfg(ATDogDog2RoughPPORunnerCfg):
+    def __post_init__(self):
+        super().__post_init__()
+        self.experiment_name = "atdog_dog2_rough270"
+
+
+@configclass
 class ATDogDog2BarPPORunnerCfg(ATDogDog2RoughPPORunnerCfg):
     def __post_init__(self):
         super().__post_init__()

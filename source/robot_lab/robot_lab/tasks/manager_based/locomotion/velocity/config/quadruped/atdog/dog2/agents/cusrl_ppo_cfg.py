@@ -154,6 +154,16 @@ class ATDogDog2FlatTrainerCfg(ATDogDog2RoughTrainerCfg):
 
 
 @dataclass
+class ATDogDog2Flat270TrainerCfg(ATDogDog2FlatTrainerCfg):
+    experiment_name = "atdog_dog2_flat270"
+
+
+@dataclass
+class ATDogDog2Rough270TrainerCfg(ATDogDog2RoughTrainerCfg):
+    experiment_name = "atdog_dog2_rough270"
+
+
+@dataclass
 class ATDogDog2BarTrainerCfg(ATDogDog2RoughTrainerCfg):
     max_iterations = 5000
     experiment_name = "atdog_dog2_bar"

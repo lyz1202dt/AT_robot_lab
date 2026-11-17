@@ -16,6 +16,18 @@ Dog3、Dog3-Arm、Dog4 训练任务及其资产配置已删除；Dog2 的 URDF/�
 
 上述命令适用于项目提供的 Isaac Lab 容器；在宿主机上可改用已安装 Isaac Lab 的 Python 解释器。源项目 `AT_DESCRIPE.md` 中 Dog2 的平地、台阶、沙地和斜坡任务 ID 均在 `dog2/__init__.py` 注册；横杆任务也在此注册。继续训练时可追加 `--resume --load_run=<run_name> --checkpoint=<checkpoint_name>`，请使用目标项目自身生成的 checkpoint。
 
+Dog2 的 `Flat270` 和 `Rough270` 任务沿用原任务的单帧 45 维 actor 观测，并保留 6 帧历史，总计 270 维。单帧依次为机身角速度 3、重力投影 3、速度指令 3、关节位置 12、关节速度 12、上一步动作 12；critic 仍为 48 维。Isaac Lab 按观测项拼接历史：先是角速度的 6 帧，再是重力投影的 6 帧，以此类推；每项内部按从旧到新排列。环境重置后的首次观测会填满 6 帧。
+
+```bash
+/workspace/isaaclab/isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/train.py \
+  --task=RobotLab-Isaac-Velocity-Flat270-ATDog-Dog2-v0 --headless
+
+/workspace/isaaclab/isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/train.py \
+  --task=RobotLab-Isaac-Velocity-Rough270-ATDog-Dog2-v0 --headless
+```
+
+训练完成后，用同一任务 ID 执行 `scripts/reinforcement_learning/rsl_rl/play.py --checkpoint=<checkpoint.pt> --export_only --headless` 导出 ONNX。部署到 `quadruped-robot-gc/03dog` 的第四种策略时，需使用该 270 维模型；原 45 维模型不能直接用于新策略。
+
 ## 一、整体流程
 
 ```text

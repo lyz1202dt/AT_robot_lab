@@ -11,7 +11,9 @@ RobotLab-Isaac-Velocity-Rough-CSDog1-v0                --崎岖
 ATDOG2（与 AT_rl_sar 的 Dog2 配置和 URDF 同步）
 任务名称：
 RobotLab-Isaac-Velocity-Flat-ATDog-Dog2-v0      --平地
+RobotLab-Isaac-Velocity-Flat270-ATDog-Dog2-v0   --270维（6帧）平地
 RobotLab-Isaac-Velocity-Rough-ATDog-Dog2-v0     --崎岖
+RobotLab-Isaac-Velocity-Rough270-ATDog-Dog2-v0  --270维（6帧）崎岖
 RobotLab-Isaac-Velocity-Stairs-ATDog-Dog2-v0    --台阶
 RobotLab-Isaac-Velocity-Sand-ATDog-Dog2-v0      --沙地
 RobotLab-Isaac-Velocity-Slope-ATDog-Dog2-v0     --斜坡
