@@ -16,7 +16,7 @@ Dog3、Dog3-Arm、Dog4 训练任务及其资产配置已删除；Dog2 的 URDF/�
 
 上述命令适用于项目提供的 Isaac Lab 容器；在宿主机上可改用已安装 Isaac Lab 的 Python 解释器。Dog2 的任务 ID 均在 `dog2/__init__.py` 注册。续训时使用相同任务 ID，并按 [总命令文档](../AT_DESCRIPE.md) 指定 `--resume` 和实际 checkpoint 路径。
 
-Dog2 的 `Flat270` 和 `Rough270` 任务沿用原任务的单帧 45 维 actor 观测，并保留 6 帧历史，总计 270 维。单帧依次为机身角速度 3、重力投影 3、速度指令 3、关节位置 12、关节速度 12、上一步动作 12；critic 仍为 48 维。Isaac Lab 按观测项拼接历史：先是角速度的 6 帧，再是重力投影的 6 帧，以此类推；每项内部按从旧到新排列。环境重置后的首次观测会填满 6 帧。
+Dog2 的 `Flat270` 和 `Rough270` 任务沿用原任务的单帧 45 维 actor 观测，并保留 6 帧历史，总计 270 维。单帧依次为机身角速度 3、重力投影 3、速度指令 3、关节位置 12、关节速度 12、上一步动作 12。`Flat270` 的 critic 单帧为 48 维（另含机身线速度 3 维），保留 6 帧历史后为 288 维；`Rough270` 的 critic 仍为单帧 48 维。Isaac Lab 按观测项拼接历史：先是角速度的 6 帧，再是重力投影的 6 帧，以此类推；每项内部按从旧到新排列。环境重置后的首次观测会填满 6 帧。
 
 ```bash
 /workspace/isaaclab/isaaclab.sh -p scripts/reinforcement_learning/rsl_rl/train.py \
