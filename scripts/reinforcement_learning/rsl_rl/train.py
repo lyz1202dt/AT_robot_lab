@@ -224,7 +224,12 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
     # Resolve the checkpoint before allocating the simulation scene.
     if agent_cfg.resume or agent_cfg.algorithm.class_name == "Distillation":
-        if getattr(agent_cfg, "source_checkpoint", None) and not args_cli.load_run:
+        if args_cli.checkpoint and Path(args_cli.checkpoint).expanduser().is_absolute() and not args_cli.load_run:
+            resume_path = Path(args_cli.checkpoint).expanduser()
+            if not resume_path.is_file():
+                raise FileNotFoundError(f"Checkpoint does not exist: {resume_path}")
+            resume_path = str(resume_path)
+        elif getattr(agent_cfg, "source_checkpoint", None) and not args_cli.load_run:
             resume_path = Path(args_cli.checkpoint or agent_cfg.source_checkpoint).expanduser()
             if not resume_path.is_absolute():
                 resume_path = PROJECT_ROOT / resume_path

@@ -2,7 +2,7 @@
 
 本文以仓库已有的 AT-DOG2 为例，说明如何把一台四足机器人接入 Isaac Lab，并开展平地、粗糙地形、楼梯、沙地、横杆和斜坡训练。
 
-AT-DOG2 的训练配置、URDF 和网格已同步自 `AT_rl_sar`。实际 Dog2 使用 `merge_fixed_joints=False` 保留 `.*_foot` 接触刚体；初始机身高度为 0.40 m，腿部默认 thigh 角为 -0.7854 rad。Dog2 特有的高度、姿态、接触和镜像奖励在 `dog2/rewards.py` 中，避免改变 CSDog1 和 03dog 的公共奖励行为。
+AT-DOG2 的训练配置、URDF 和网格已同步自 `AT_rl_sar`。实际 Dog2 使用 `merge_fixed_joints=False` 保留 `.*_foot` 接触刚体；初始机身高度为 0.40 m，腿部默认 thigh 角为 -0.7854 rad。Dog2 特有的高度、姿态、接触和镜像奖励在 `dog2/rewards.py` 中。各任务的完整训练、续训和导出命令见 [AT_DESCRIPE.md](../AT_DESCRIPE.md)。
 
 Dog3、Dog3-Arm、Dog4 训练任务及其资产配置已删除；Dog2 的 URDF/网格继续由 Dog2 训练任务使用。原有 Dog3 模型文件仍保留在 `source/robot_lab/data/Robots/atdog/`，不再注册对应训练任务。
 
@@ -14,7 +14,7 @@ Dog3、Dog3-Arm、Dog4 训练任务及其资产配置已删除；Dog2 的 URDF/�
   --num_envs=10000 --max_iterations=2000 --headless
 ```
 
-上述命令适用于项目提供的 Isaac Lab 容器；在宿主机上可改用已安装 Isaac Lab 的 Python 解释器。源项目 `AT_DESCRIPE.md` 中 Dog2 的平地、台阶、沙地和斜坡任务 ID 均在 `dog2/__init__.py` 注册；横杆任务也在此注册。继续训练时可追加 `--resume --load_run=<run_name> --checkpoint=<checkpoint_name>`，请使用目标项目自身生成的 checkpoint。
+上述命令适用于项目提供的 Isaac Lab 容器；在宿主机上可改用已安装 Isaac Lab 的 Python 解释器。Dog2 的任务 ID 均在 `dog2/__init__.py` 注册。续训时使用相同任务 ID，并按 [总命令文档](../AT_DESCRIPE.md) 指定 `--resume` 和实际 checkpoint 路径。
 
 Dog2 的 `Flat270` 和 `Rough270` 任务沿用原任务的单帧 45 维 actor 观测，并保留 6 帧历史，总计 270 维。单帧依次为机身角速度 3、重力投影 3、速度指令 3、关节位置 12、关节速度 12、上一步动作 12；critic 仍为 48 维。Isaac Lab 按观测项拼接历史：先是角速度的 6 帧，再是重力投影的 6 帧，以此类推；每项内部按从旧到新排列。环境重置后的首次观测会填满 6 帧。
 

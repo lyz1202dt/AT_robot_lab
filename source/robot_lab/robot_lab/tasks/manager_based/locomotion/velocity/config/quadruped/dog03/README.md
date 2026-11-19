@@ -6,7 +6,7 @@ The script preserves mesh filenames, inertias, joint frames, axes and the
 30 Nm / 30 rad/s motor limits. It normalizes link/joint names, makes mesh paths
 relative, and fixes the exported left rear foot joint to match the other feet.
 The robot has twelve driven joints and four fixed, separately reported feet.
-Isaac Lab imports the URDF automatically; no CSDog1 USD is needed.
+Isaac Lab imports the URDF automatically.
 
 | Original leg | Training prefix | Driven links/joints | Fixed foot |
 | --- | --- | --- | --- |
@@ -29,8 +29,8 @@ limits are 30 Nm and action scale is 0.25. These are starting training
 parameters and need validation in simulation and tuning for the real robot.
 
 The registered tasks use standard and full Cyberstar training paths. All
-implementations are local copies under `dog03`; none import or inherit from
-`csdog1`. Shared Isaac Lab/RobotLab infrastructure and the HIM model remain in use.
+implementations are local to `dog03`. Shared Isaac Lab/RobotLab infrastructure
+and the HIM model remain in use.
 
 | Task suffix | Environment | Actor | Critic | Reward implementation |
 | --- | --- | --- | --- | --- |
@@ -39,7 +39,7 @@ implementations are local copies under `dog03`; none import or inherit from
 | Flat-282-DomainRand | `cyberstar.lab.Dog03CyberstarEnv` | 282 | 491 | `cyberstar/core.py`, `cyberstar/config.json` |
 | Stairs-282 | `cyberstar.stairs_lab.Dog03CyberstarStairsEnv` | 282 | 491 | `cyberstar/core.py`, `cyberstar/stairs_core.py`, `cyberstar/stairs_config.json` |
 
-The directory layout follows CSDog1, including the full `cyberstar/` package:
+The directory includes the full `cyberstar/` package:
 
 ```text
 dog03/
@@ -76,7 +76,7 @@ Robust flat enables 78 reward terms plus termination; stairs enables 85 plus
 termination. The Ji22 aggregator combines positive and negative rewards before
 adding termination. Standard tasks continue to use local `rewards.py` and
 `rewards_cfg.py`. The manager-only domain-randomization class in `flat_env_cfg.py`
-is retained as in CSDog1; the registered DomainRand task uses `cyberstar/env_cfg.py`.
+is retained for compatibility; the registered DomainRand task uses `cyberstar/env_cfg.py`.
 
 The actor frame is phase (2), angular velocity (3), projected gravity (3),
 commands (3), joint offsets (12), joint velocities (12), previous actions (12).
@@ -163,28 +163,26 @@ motion retains a lifting signal when blocked, while zero commands earn none.
 
 Actor/critic hidden dimensions are `[512, 256, 128]` with ELU. HIM retains the
 `[128, 64, 16]` encoder, `[128, 64]` target encoder and 32 prototypes.
-The full Cyberstar critic starts with 491 inputs, matching the corresponding
-CSDog1 stages. Robot-specific posture and geometry are adapted to 03dog:
+The full Cyberstar critic starts with 491 inputs. Robot-specific posture and geometry are adapted to 03dog:
 0/-0.7854/0 joint angles, 0.40 m spawn height, 0.32 m height targets, URDF joint
 limits, FK-derived footholds, and about 0.373 m stance width. All four FOOT
-bodies, mesh collisions, masses and inertias come directly from the 03dog URDF;
-CSDog1's USD foot reconstruction is replaced by local URDF spawning.
+bodies, mesh collisions, masses and inertias come directly from the 03dog URDF.
 
 Train Flat-282, then continue its checkpoint into DomainRand or stairs using
 the same training backend. All three now share the 491-D critic architecture.
 Old 50-D critic checkpoints (including the previous standard Flat-282) cannot
 be loaded directly into these tasks;
-the observation semantics also differ. No CSDog1 checkpoint is selected
-automatically. Training, resume and playback commands are in `AT_DESCRIPE.md`.
+the observation semantics also differ. Checkpoints are selected explicitly.
+Training, resume and playback commands are in
+[`AT_DESCRIPE.md`](../../../../../../../../../../AT_DESCRIPE.md).
 Logs continue to use independent `dog03_*` directories.
 For a fresh robust-flat run, the documented command requests 2000 iterations
 to cover the copied recovery curriculum's 1200-1600 iteration window. The
-runner's default 1000 iterations remains the same as CSDog1's continuation budget.
+runner's default is 1000 iterations.
 
 `DOG03_STAIR_STAGE=0...4` selects terrain height bands and additional iterations.
-The default is stage 0, independent of `CSDOG1_STAIR_STAGE`. The full local config
-is `cyberstar/stairs_config.json`. Geometry, stage distributions and budgets are
-copied from CSDog1; stage 4 uses 5-17 cm bands and 1500 iterations. Patches are
+The default is stage 0. The full local config is `cyberstar/stairs_config.json`.
+Stage 4 uses 5-17 cm bands and 1500 iterations. Patches are
 30% flat and 70% stairs, with 65% ascent among stairs. Resets place the robot on
 the center platform near the stair edge, with a small heading perturbation.
 Stages are selected between runs.

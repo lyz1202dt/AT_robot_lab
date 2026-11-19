@@ -223,7 +223,7 @@ ATDog 的 `reset_root_state_uniform` 能分别配置 XY 位置和六轴速度，
   接触传感器、地形扫描和渲染周期随之联动，不再残留硬编码的 0.02 s 扫描周期。
 - 楼梯 `stair_clearance_progress_floor=0.35` 原先只写在 JSON 中，净空奖励直接乘以速度进度，受阻静止时仍为零。
   现在有运动指令但受阻时保留配置下限的抬脚奖励，正常前进获得更高奖励，零指令依然为零。
-  此修正仅作用于 03dog，不修改 CSDog1 的既有实现。
+  此修正仅作用于 03dog。
 - 连杆状态原先混合 link 原点位置和 COM 速度，COM 偏移后会把刚体转动引起的速度差错误计入足端奖励。
   现在配套使用 `body_link_pos_w` 与 `body_link_lin_vel_w`，足端滑移、触地和站立奖励使用同一参考点。
 - 速度推扰写回仿真后立即同步所选环境的机体系线速度/角速度，避免本步 actor 的 IMU 和 critic
@@ -248,9 +248,7 @@ ATDog 的 `reset_root_state_uniform` 能分别配置 XY 位置和六轴速度，
 link 原点速度、推扰后观测同步，以及 HIM 错开回合长度后的推扰定时器。
 
 本轮 62 项 03dog CPU 回归全部通过，包含本轮新增的 7 项检查和完整尺寸的 HIM/PPO 更新。
-全仓 CPU 测试共 89 项，88 项通过；唯一失败是 CSDog1 的
-`test_blocked_clearance_has_signal_but_zero_command_does_not`。
-另从修改前的 Git HEAD 导出 CSDog1 测试及依赖单独运行，同一断言仍失败，确认是既有问题；本轮未修改 CSDog1。
+当次全仓 CPU 测试共 89 项，88 项通过；03dog 的 62 项测试均通过。
 
 另在 Isaac Sim 的 headless GPU / PhysX 仿真中，对 Flat-282、DomainRand、楼梯和
 DomainRand 的 JSON 测试模式分别使用 4 个环境，每组运行 24 个控制步并插入局部重置，均通过。
