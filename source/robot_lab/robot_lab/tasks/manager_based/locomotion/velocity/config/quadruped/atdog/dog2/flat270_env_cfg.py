@@ -95,7 +95,7 @@ class ATDogDog2Flat270EnvCfg(ATDogDog2FlatEnvCfg):
         self.rewards.lin_vel_z_l2.weight = -20.0
         self.rewards.ang_vel_xy_l2.weight = -2.0
         self.rewards.flat_orientation_l2.func = dog2_rewards.gravity_orientation_l2
-        self.rewards.flat_orientation_l2.weight = -6.0
+        self.rewards.flat_orientation_l2.weight = -4.0
         self.rewards.base_height_l2.func = dog2_rewards.base_height_exp_penalty
         self.rewards.base_height_l2.weight = -2.0
         self.rewards.base_height_l2.params["std"] = 0.1
@@ -112,28 +112,30 @@ class ATDogDog2Flat270EnvCfg(ATDogDog2FlatEnvCfg):
         self.rewards.joint_vel_limits.weight = 0.0
         self.rewards.joint_power.weight = -2e-5
         self.rewards.stand_still.weight = -8.0
-        self.rewards.joint_pos_penalty.weight = -2.5
+        self.rewards.joint_pos_penalty.weight = -0.75
         self.rewards.joint_mirror.weight = -0.05
         self.rewards.joint_mirror.func = dog2_rewards.joint_mirror
         self.rewards.joint_mirror.params["mirror_joints"] = [
             ["FR_(hip|thigh|calf).*", "RL_(hip|thigh|calf).*"],
             ["FL_(hip|thigh|calf).*", "RR_(hip|thigh|calf).*"],
         ]
-        self.rewards.action_rate_l2.weight = -0.5
+        self.rewards.action_rate_l2.weight = -0.2
 
         self.rewards.undesired_contacts.func = dog2_rewards.undesired_contacts_unconditional
         self.rewards.undesired_contacts.weight = -20.0
         self.rewards.undesired_contacts.params["sensor_cfg"].body_names = [f"^(?!.*{self.foot_link_name}).*"]
         self.rewards.contact_forces.weight = -1.5e-4
         self.rewards.contact_forces.params["sensor_cfg"].body_names = [self.foot_link_name]
-        self.rewards.track_lin_vel_xy_exp.weight = 10.0
-        self.rewards.track_lin_vel_xy_exp.params["std"] = 0.4
-        self.rewards.track_ang_vel_z_exp.weight = 10.0
+        # A wider kernel gives useful feedback before the robot tracks the command closely.
+        self.rewards.track_lin_vel_xy_exp.weight = 30.0
+        self.rewards.track_lin_vel_xy_exp.params["std"] = 0.8
+        self.rewards.track_ang_vel_z_exp.weight = 8.0
+        self.rewards.track_ang_vel_z_exp.params["std"] = 0.7
 
         self.rewards.feet_air_time.weight = 2.0
         self.rewards.feet_air_time.params["threshold"] = 0.2
         self.rewards.feet_air_time.params["sensor_cfg"].body_names = [self.foot_link_name]
-        self.rewards.feet_air_time_variance.weight = -20.0
+        self.rewards.feet_air_time_variance.weight = -5.0
         self.rewards.feet_air_time_variance.params["sensor_cfg"].body_names = [self.foot_link_name]
         self.rewards.feet_contact.weight = 0.0
         self.rewards.feet_contact.params["sensor_cfg"].body_names = [self.foot_link_name]
@@ -142,7 +144,7 @@ class ATDogDog2Flat270EnvCfg(ATDogDog2FlatEnvCfg):
         self.rewards.feet_stumble.weight = 0.0
         self.rewards.feet_stumble.params["sensor_cfg"].body_names = [self.foot_link_name]
         self.rewards.feet_slide.func = dog2_rewards.feet_slide_world
-        self.rewards.feet_slide.weight = -10.0
+        self.rewards.feet_slide.weight = -3.0
         self.rewards.feet_slide.params["sensor_cfg"].body_names = [self.foot_link_name]
         self.rewards.feet_slide.params["asset_cfg"].body_names = [self.foot_link_name]
         self.rewards.feet_height.weight = -20.0
@@ -155,7 +157,8 @@ class ATDogDog2Flat270EnvCfg(ATDogDog2FlatEnvCfg):
         self.rewards.feet_gait.params["std"] = 0.05
         self.rewards.feet_gait.params["max_err"] = 0.3
         self.rewards.feet_gait.params["synced_feet_pair_names"] = (("FL_foot", "RR_foot"), ("FR_foot", "RL_foot"))
-        self.rewards.upward.weight = 8.0
+        # Flat orientation already rewards staying upright; this term contributes ~32 per upright step.
+        self.rewards.upward.weight = 0.0
         self.rewards.feet_distance_y_exp.weight = 0.8
         self.rewards.feet_distance_y_exp.params["stance_width"] = 0.34
         self.rewards.feet_distance_y_exp.params["std"] = 0.15
